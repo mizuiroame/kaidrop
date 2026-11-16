@@ -1,0 +1,18 @@
+[project]
+name = "kaidrop"
+version = "0.1.0"
+description = "Send music to a Switch 2 over FTP, with file names the console can list."
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Mizuiro"}]
+requires-python = ">=3.10"
+
+[project.scripts]
+kaidrop = "kaidrop.app:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["kaidrop"]
