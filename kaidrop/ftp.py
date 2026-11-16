@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import ftplib
+import posixpath
 import threading
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Callable
 
@@ -15,6 +17,7 @@ BLOCK_SIZE = 64 * 1024
 class Status(Enum):
     SENT = "Sent"
     SKIPPED = "Already there"
+    COPY = "Sent as a copy"
     FAILED = "Failed"
     CANCELLED = "Cancelled"
 
@@ -30,6 +33,26 @@ class Connection:
 
 class Cancelled(Exception):
     """The user stopped the upload."""
+
+
+class Choice(Enum):
+    """What to do with a file already on the server."""
+    SKIP = "skip"
+    REPLACE = "replace"
+    KEEP_BOTH = "keep both"  # Send the new one under a free name.
+    CANCEL = "cancel"        # Stop the batch.
+
+
+@dataclass(frozen=True)
+class RemoteFile:
+    path: str
+    size: int
+    modified: datetime | None  # None when the server doesn't say.
+
+
+# Asked when a file is already there: the choice, and whether it goes for
+# the rest of the batch too.
+ConflictFn = Callable[["UploadItem", RemoteFile], "tuple[Choice, bool]"]
 
 
 def connect(conn: Connection) -> ftplib.FTP:
@@ -57,6 +80,30 @@ def _remote_size(ftp: ftplib.FTP, path: str) -> int | None:
         return None
 
 
+def _remote_time(ftp: ftplib.FTP, path: str) -> datetime | None:
+    """The file's modification time (MDTM), in local time."""
+    try:
+        reply = ftp.sendcmd(f"MDTM {path}")
+        stamp = datetime.strptime(reply.split()[1][:14], "%Y%m%d%H%M%S")
+        return stamp.replace(tzinfo=timezone.utc).astimezone()
+    except (ftplib.all_errors, ValueError, IndexError):
+        return None
+
+
+def free_name(path: str, taken: Callable[[str], bool]) -> str:
+    """The first of "song (2).mp3", "song (3).mp3"… that isn't taken."""
+    folder, name = posixpath.split(path)
+    stem, dot, ext = name.rpartition(".")
+    if not dot or not stem:
+        stem, dot, ext = name, "", ""
+    n = 2
+    while True:
+        candidate = posixpath.join(folder, f"{stem} ({n}){dot}{ext}")
+        if not taken(candidate):
+            return candidate
+        n += 1
+
+
 def _make_folders(ftp: ftplib.FTP, folders: tuple[str, ...]) -> None:
     for folder in folders:
         current = ""
@@ -73,12 +120,15 @@ DoneFn = Callable[[int, UploadItem, Status, str], None]   # index, item, status,
 
 
 def upload(conn: Connection, plan: Plan, on_progress: ProgressFn, on_done: DoneFn,
-           cancel: threading.Event, skip_existing: bool = True) -> dict[Status, int]:
-    """Uploads every item, reporting progress. Files already on the console
-    with the same size are skipped. Returns how many ended in each status."""
+           cancel: threading.Event, on_conflict: ConflictFn | None = None) -> dict[Status, int]:
+    """Uploads every item, reporting progress, and returns how many ended in
+    each status. For a file already on the server, on_conflict says what to
+    do; without it, one with the same size is skipped and others replaced.
+    A file sent as a copy reports its new path as the message."""
     counts = {status: 0 for status in Status}
     ftp = connect(conn)
     total_sent = 0
+    for_all: Choice | None = None
     try:
         _make_folders(ftp, plan.folders)
         for index, item in enumerate(plan.items):
@@ -86,12 +136,31 @@ def upload(conn: Connection, plan: Plan, on_progress: ProgressFn, on_done: DoneF
                 on_done(index, item, Status.CANCELLED, "")
                 counts[Status.CANCELLED] += 1
                 continue
-            if skip_existing and _remote_size(ftp, item.remote) == item.size:
-                total_sent += item.size
-                on_progress(index, item, item.size, total_sent)
-                on_done(index, item, Status.SKIPPED, "")
-                counts[Status.SKIPPED] += 1
-                continue
+            target, status = item.remote, Status.SENT
+            existing = _remote_size(ftp, item.remote)
+            if existing is not None:
+                if for_all:
+                    choice = for_all
+                elif on_conflict:
+                    choice, remember = on_conflict(item, RemoteFile(item.remote, existing,
+                                                                    _remote_time(ftp, item.remote)))
+                    for_all = choice if remember else None
+                else:
+                    choice = Choice.SKIP if existing == item.size else Choice.REPLACE
+                if choice is Choice.CANCEL:
+                    cancel.set()
+                    on_done(index, item, Status.CANCELLED, "")
+                    counts[Status.CANCELLED] += 1
+                    continue
+                if choice is Choice.SKIP:
+                    total_sent += item.size
+                    on_progress(index, item, item.size, total_sent)
+                    on_done(index, item, Status.SKIPPED, "")
+                    counts[Status.SKIPPED] += 1
+                    continue
+                if choice is Choice.KEEP_BOTH:
+                    target = free_name(item.remote, lambda p: _remote_size(ftp, p) is not None)
+                    status = Status.COPY
             sent = 0
 
             def block(data: bytes) -> None:
@@ -104,18 +173,18 @@ def upload(conn: Connection, plan: Plan, on_progress: ProgressFn, on_done: DoneF
 
             try:
                 with item.local.open("rb") as f:
-                    ftp.storbinary(f"STOR {item.remote}", f, BLOCK_SIZE, callback=block)
-                on_done(index, item, Status.SENT, "")
-                counts[Status.SENT] += 1
+                    ftp.storbinary(f"STOR {target}", f, BLOCK_SIZE, callback=block)
+                on_done(index, item, status, target if status is Status.COPY else "")
+                counts[status] += 1
             except Cancelled:
                 # The half-sent file would look complete by name: remove it.
-                ftp = _reconnect_and_delete(conn, ftp, item.remote)
+                ftp = _reconnect_and_delete(conn, ftp, target)
                 on_done(index, item, Status.CANCELLED, "")
                 counts[Status.CANCELLED] += 1
             except (OSError, ftplib.Error) as e:
                 on_done(index, item, Status.FAILED, str(e))
                 counts[Status.FAILED] += 1
-                ftp = _reconnect_and_delete(conn, ftp, item.remote)
+                ftp = _reconnect_and_delete(conn, ftp, target)
     finally:
         try:
             ftp.quit()

@@ -38,8 +38,14 @@ So `06 Canción.flac` uploaded with FileZilla is invisible, while
   copies on the console get the new names.
 - Shows, before sending, each file's name on your computer and on the
   console (renamed ones in color).
-- Skips files already on the console with the same size, so you can send a
-  folder again after adding songs, or resume a stopped upload.
+- When a file is already on the console, asks what to do, showing both
+  files' names, sizes and dates: **Skip**, **Replace**, **Keep both** (the
+  new one is sent as `name (2)`) or **Cancel the batch** — for that file or
+  for every one in the batch. Sending a folder again after adding songs:
+  choose Skip for all.
+- Shows whether it's connected, notices when the server goes away (OunceShell
+  closed, the console asleep) and offers **Reconnect**. The **Log** tab lists
+  what happened, with the time, like FileZilla's message log.
 - Remembers the console's address and the destination folder.
 
 Music players such as [KaiPlayer](https://github.com/mizuiroame/kaiplayer)
@@ -67,9 +73,13 @@ by its file name, which on the console is the plain one.
 4. Send files or folders by **dragging them from the left onto the right**
    (onto a folder to send them into it), by dragging them from Explorer, or
    by selecting them and pressing **Send →**.
-5. The **Transfers** list shows each file, the name it gets on the console
+5. The **Transfers** tab shows each file, the name it gets on the console
    (renamed ones in color) and how it went. **Cancel** stops the batch being
    sent (a half-sent file is removed); **Clear finished** tidies the list.
+   The **Log** tab shows what KaiDrop did and what the server said.
+6. Next to **Connect**, a dot shows the connection. If it turns red
+   (*Connection lost*), start OunceShell's FTP server again and press
+   **Reconnect**.
 
 ## Download
 

@@ -11,10 +11,12 @@ from tkinter import messagebox, ttk
 from typing import Callable
 
 from . import __version__, settings
-from .ftp import Connection, Status, upload
+from .conflict import ConflictDialog
+from .ftp import Choice, Connection, RemoteFile, Status, upload
+from .logview import ERROR, GOOD, INFO, LogView
 from .panes import LocalPane, RemotePane, human_size
-from .plan import build_plan
-from .remote import RemoteSession
+from .plan import UploadItem, build_plan
+from .remote import CONNECTED, CONNECTING, LOST, RemoteSession
 
 try:  # Drops from Explorer or Finder, when tkinterdnd2 is installed.
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -42,6 +44,7 @@ class KaiDrop(_Root):
         self.cancel = threading.Event()
         self.session: RemoteSession | None = None
         self.conn: Connection | None = None
+        self.link_state = ""  # The session's connection state; "" when not connected.
         self.sending = False
         self.queue_rows = 0
         self._drag_start: tuple[int, int] | None = None
@@ -70,6 +73,8 @@ class KaiDrop(_Root):
             ttk.Entry(conn, textvariable=var, width=width, show=show).pack(side="left", padx=(0, 12))
         self.connect_button = ttk.Button(conn, text="Connect", command=self._toggle_connection)
         self.connect_button.pack(side="left")
+        self.link = ttk.Label(conn, text="● Not connected", foreground="#888")
+        self.link.pack(side="left", padx=(10, 0))
         self.plain = tk.BooleanVar(value=self.saved.plain_names)
         ttk.Checkbutton(conn, text="Plain names for Switch 2", variable=self.plain).pack(side="right")
         ttk.Label(self, text=EXPLANATION, wraplength=1140, foreground="#666").pack(fill="x", padx=12)
@@ -96,18 +101,21 @@ class KaiDrop(_Root):
         lower.pack(side="bottom", fill="x", padx=10)
         head = ttk.Frame(lower)
         head.pack(fill="x")
-        ttk.Label(head, text="Transfers", font=("Segoe UI", 10, "bold")).pack(side="left")
         self.cancel_button = ttk.Button(head, text="Cancel", command=self._cancel, state="disabled")
         self.cancel_button.pack(side="right")
         ttk.Button(head, text="Clear finished", command=self._clear_finished).pack(side="right", padx=6)
-        self.queue = ttk.Treeview(lower, columns=("remote", "size", "status"), height=7)
+        tabs = ttk.Notebook(lower)
+        tabs.pack(fill="x", pady=(0, 4))
+        self.queue = ttk.Treeview(tabs, columns=("remote", "size", "status"), height=7)
         for col, title, width in [("#0", "From this computer", 380), ("remote", "To the server", 420),
                                   ("size", "Size", 90), ("status", "Status", 140)]:
             self.queue.heading(col, text=title)
             self.queue.column(col, width=width, anchor="e" if col == "size" else "w")
         self.queue.tag_configure("renamed", foreground="#a0408c")
         self.queue.tag_configure("failed", foreground="#c0392b")
-        self.queue.pack(fill="x", pady=4)
+        self.log = LogView(tabs)
+        tabs.add(self.queue, text="Transfers")
+        tabs.add(self.log, text="Log")
         self.progress = ttk.Progressbar(lower, mode="determinate")
         self.progress.pack(fill="x")
         self.status = ttk.Label(self, text="Type the console's address (OunceShell's FTP screen shows it) and Connect.")
@@ -115,8 +123,10 @@ class KaiDrop(_Root):
         # Packed last, the panes get the height left: the transfers and status line always show.
         panes.pack(fill="both", expand=True, padx=10, pady=8)
 
-    def _set_status(self, text: str) -> None:
+    def _set_status(self, text: str, kind: str = INFO) -> None:
+        """The status line, and the log."""
         self.status.config(text=text)
+        self.log.add(text, kind)
 
     # --- Connecting ---
 
@@ -131,21 +141,42 @@ class KaiDrop(_Root):
         return Connection(host, int(self.port.get()), self.user.get().strip() or "anonymous", self.password.get())
 
     def _toggle_connection(self) -> None:
-        if self.session:
+        """Connect, Disconnect, or Reconnect after the connection was lost."""
+        if self.session and self.link_state != LOST:
             self.session.close()
             self.session = None
             self.remote.attach(None)
-            self.connect_button.config(text="Connect")
-            self._set_status("Disconnected.")
+            self._show_link("", "Disconnected.")
             return
+        if self.session:
+            self.session.close()
+            self.session = None
         conn = self._connection()
         if not conn:
             return
         self.conn = conn
-        self.session = RemoteSession(conn, self.events.put)
+        session = RemoteSession(conn, self.events.put, lambda state, msg: self._link_changed(session, state, msg))
+        self.session = session
         self.connect_button.config(text="Disconnect")
-        self.remote.attach(self.session)
+        self.remote.attach(session)
         self._remember()
+
+    def _link_changed(self, session: RemoteSession, state: str, message: str) -> None:
+        if session is self.session:  # Not one closed since.
+            self._show_link(state, message)
+
+    def _show_link(self, state: str, message: str) -> None:
+        self.link_state = state
+        text, color = {CONNECTING: ("● Connecting…", "#b7791f"), CONNECTED: ("● Connected", "#1e7d32"),
+                       LOST: ("● Connection lost", "#c0392b")}.get(state, ("● Not connected", "#888"))
+        self.link.config(text=text, foreground=color)
+        self.connect_button.config(text={LOST: "Reconnect", "": "Connect"}.get(state, "Disconnect"))
+        if state == CONNECTED:
+            self.log.add(message, GOOD)  # The server's welcome: the log only.
+        elif state == LOST:
+            self._set_status(message.rstrip(". ") + ". Press Reconnect to try again.", ERROR)
+        else:
+            self._set_status(message)
 
     def _remember(self) -> None:
         settings.save(settings.Settings(self.host.get().strip(), self.port.get().strip(), self.user.get().strip(),
@@ -223,12 +254,20 @@ class KaiDrop(_Root):
                 counts = upload(conn, plan,
                                 lambda i, item, sent, total: post(lambda r=first + i, t=total: self._progress(r, t)),
                                 lambda i, item, st, msg: post(lambda r=first + i, s=st, m=msg: self._row_done(r, s, m)),
-                                self.cancel)
+                                self.cancel, self._ask_from_worker)
                 post(lambda c=counts, d=folder: self._finished(c, d))
             except Exception as e:  # Connection problems end this batch with a message.
                 post(lambda m=str(e): self._failed(m))
 
+    def _ask_from_worker(self, item: UploadItem, remote: RemoteFile) -> tuple[Choice, bool]:
+        """Asks on the window's thread what to do with a file already there;
+        the transfer thread waits for the answer."""
+        answer: queue.Queue = queue.Queue(maxsize=1)
+        self.events.put(lambda: answer.put(ConflictDialog(self, item, remote).ask()))
+        return answer.get()
+
     def _started(self, plan) -> None:
+        self.log.add(f"Sending {len(plan.items)} files ({human_size(plan.total_bytes)})…")
         self.sending = True
         self.cancel.clear()
         self.cancel_button.config(state="normal")
@@ -244,20 +283,25 @@ class KaiDrop(_Root):
         if not self.queue.exists(iid):
             return
         self.queue.set(iid, "status", status.value if status is not Status.FAILED else f"Failed: {message}"[:40])
+        if status is Status.COPY:
+            self.queue.set(iid, "remote", message)
         if status is Status.FAILED:
             self.queue.item(iid, tags=("failed",))
+            self.log.add(f"Failed: {self.queue.set(iid, 'remote')}: {message}", ERROR)
         self.queue.see(iid)
 
     def _finished(self, counts: dict, folder: str) -> None:
         self._end_batch()
-        self._set_status(f"Done: {counts[Status.SENT]} sent, {counts[Status.SKIPPED]} already there, "
-                         f"{counts[Status.FAILED]} failed, {counts[Status.CANCELLED]} cancelled.")
+        copies = f", {counts[Status.COPY]} sent as copies" if counts[Status.COPY] else ""
+        self._set_status(f"Done: {counts[Status.SENT]} sent{copies}, {counts[Status.SKIPPED]} skipped, "
+                         f"{counts[Status.FAILED]} failed, {counts[Status.CANCELLED]} cancelled.",
+                         ERROR if counts[Status.FAILED] else GOOD)
         if self.session and folder.startswith(self.remote.path):
             self.remote.refresh(quiet=True)
 
     def _failed(self, message: str) -> None:
         self._end_batch()
-        self._set_status(f"Stopped: {message}")
+        self._set_status(f"Stopped: {message}", ERROR)
         messagebox.showerror("KaiDrop", f"The transfer stopped: {message}")
 
     def _end_batch(self) -> None:

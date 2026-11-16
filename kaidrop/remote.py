@@ -74,14 +74,27 @@ def delete_tree(ftp: ftplib.FTP, path: str, is_dir: bool) -> None:
     ftp.rmd(path)
 
 
+# Connection states reported by a session.
+CONNECTING, CONNECTED, LOST = "connecting", "connected", "lost"
+KEEPALIVE_S = 20  # Idle this long, the session checks that the server is still there.
+
+StateFn = Callable[[str, str], None]  # state, message
+
+
 class RemoteSession:
     """One connection, used by one worker thread. Jobs run in order; their
     results come back through `post`, which must hand them to the window's
-    thread (for example with a queue the window polls)."""
+    thread (for example with a queue the window polls).
 
-    def __init__(self, conn: Connection, post: Callable[[Callable[[], None]], None]) -> None:
+    on_state hears when the session connects, and when the connection is
+    lost: a failed connect, or a server that stopped answering while idle.
+    The next job connects again."""
+
+    def __init__(self, conn: Connection, post: Callable[[Callable[[], None]], None],
+                 on_state: StateFn | None = None) -> None:
         self.conn = conn
         self._post = post
+        self._on_state = on_state
         self._jobs: queue.Queue = queue.Queue()
         self._ftp: ftplib.FTP | None = None
         threading.Thread(target=self._run, daemon=True).start()
@@ -93,14 +106,28 @@ class RemoteSession:
     def close(self) -> None:
         self._jobs.put(None)
 
+    def _state(self, state: str, message: str) -> None:
+        if self._on_state:
+            self._post(lambda f=self._on_state: f(state, message))
+
     def _connection(self) -> ftplib.FTP:
         if self._ftp is None:
-            self._ftp = connect(self.conn)
+            self._state(CONNECTING, f"Connecting to {self.conn.host}:{self.conn.port}…")
+            try:
+                self._ftp = connect(self.conn)
+            except Exception as e:
+                self._state(LOST, f"Can't connect to {self.conn.host}:{self.conn.port}: {_reason(e)}")
+                raise
+            self._state(CONNECTED, self._ftp.getwelcome() or "Connected.")
         return self._ftp
 
     def _run(self) -> None:
         while True:
-            item = self._jobs.get()
+            try:
+                item = self._jobs.get(timeout=KEEPALIVE_S)
+            except queue.Empty:
+                self._keepalive()
+                continue
             if item is None:
                 break
             job, on_result, on_error = item
@@ -108,17 +135,44 @@ class RemoteSession:
                 result = self._attempt(job)
                 self._post(lambda r=result, f=on_result: f(r))
             except Exception as e:  # Shown to the user by on_error.
-                self._post(lambda m=str(e) or type(e).__name__, f=on_error: f(m))
+                self._post(lambda m=_reason(e), f=on_error: f(m))
         if self._ftp is not None:
             try:
                 self._ftp.quit()
             except ftplib.all_errors:
                 self._ftp.close()
 
+    def _keepalive(self) -> None:
+        if self._ftp is None:
+            return  # Not connected, or already reported lost.
+        try:
+            self._ftp.voidcmd("NOOP")
+        except Exception as e:  # Closed, reset, timed out, or a 421 goodbye.
+            self._drop()
+            self._state(LOST, f"The server stopped answering: {_reason(e)}")
+
+    def _drop(self) -> None:
+        if self._ftp is not None:
+            try:
+                self._ftp.close()
+            except ftplib.all_errors:
+                pass
+        self._ftp = None
+
     def _attempt(self, job: Callable[[ftplib.FTP], Any]) -> Any:
+        was_open = self._ftp is not None
         try:
             return job(self._connection())
         except (OSError, EOFError, ftplib.error_temp):
+            if not was_open:
+                raise  # A new connection failed: trying again won't help.
             # The connection dropped (the console slept, the server restarted): once more on a new one.
-            self._ftp = None
+            self._drop()
             return job(self._connection())
+
+
+def _reason(e: BaseException) -> str:
+    text = str(e).strip()
+    if isinstance(e, EOFError) or not text:
+        return "the server closed the connection" if isinstance(e, EOFError) else type(e).__name__
+    return text
