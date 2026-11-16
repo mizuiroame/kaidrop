@@ -43,6 +43,9 @@ So `06 Canción.flac` uploaded with FileZilla is invisible, while
   new one is sent as `name (2)`) or **Cancel the batch** — for that file or
   for every one in the batch. Sending a folder again after adding songs:
   choose Skip for all.
+
+  ![When a file is already there](docs/conflict.png)
+
 - Shows whether it's connected, notices when the server goes away (OunceShell
   closed, the console asleep) and offers **Reconnect**. The **Log** tab lists
   what happened, with the time, like FileZilla's message log.
