@@ -79,7 +79,7 @@ class KaiDrop(_Root):
         self.local = LocalPane(panes, self.saved.local_folder)
         middle = ttk.Frame(panes, width=70)
         ttk.Button(middle, text="Send →", command=self._send_selected).pack(expand=True, padx=6)
-        self.remote = RemotePane(panes, self.saved.remote_folder, self._set_status)
+        self.remote = RemotePane(panes, "/", self._set_status)  # The server opens at its root.
         panes.add(self.local, weight=1)
         panes.add(middle, weight=0)
         panes.add(self.remote, weight=1)
