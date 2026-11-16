@@ -4,7 +4,7 @@
 over FTP — with file names the console can actually list.**
 
 > **Work in progress.** Sending works (tested with over a gigabyte of music
-> on a Switch 2). Downloading from the console and renaming on it are next.
+> on a Switch 2). Downloading from the console is next.
 
 ![KaiDrop](docs/kaidrop.png)
 
@@ -56,9 +56,14 @@ by its file name, which on the console is the plain one.
    and **Port** (and the user and password, if your server asks for them),
    and press **Connect**.
 3. KaiDrop looks like FileZilla: **your computer on the left, the console on
-   the right**. Browse both sides (double-click a folder, **↑** goes up, or
-   type a path and press Enter). On the right you can also make a **New
-   folder** or **Delete**.
+   the right**. On the left, a folder tree like Explorer's starts from
+   Desktop, Documents, Downloads, Music and your drives (by name, such as
+   *Data (D:)*); the folder's contents are below it. Browse both sides
+   (double-click a folder, **↑** goes up, or type a path and press Enter).
+   **Right-click** for more: on the left, *Send to the server*, *Open*,
+   *New folder* and *Refresh*; on the right, *Open*, *New folder*, *Rename*
+   (F2), *Delete* (Del) and *Refresh* (F5). With plain names on, folders
+   made or renamed on the console get plain names too.
 4. Send files or folders by **dragging them from the left onto the right**
    (onto a folder to send them into it), by dragging them from Explorer, or
    by selecting them and pressing **Send →**.
