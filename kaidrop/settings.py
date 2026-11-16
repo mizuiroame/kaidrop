@@ -1,4 +1,5 @@
-"""The connection and folder used last time (never the password)."""
+"""The connection and folder used last time (never the password). The
+connection fields start empty: only what the user typed is remembered."""
 from __future__ import annotations
 
 import json
@@ -10,8 +11,8 @@ from pathlib import Path
 @dataclass
 class Settings:
     host: str = ""
-    port: int = 5000
-    user: str = "anonymous"
+    port: str = ""
+    user: str = ""
     remote_folder: str = "/"
     plain_names: bool = True
     local_folder: str = ""
@@ -30,7 +31,7 @@ def load() -> Settings:
     defaults = Settings()
     return Settings(
         host=str(data.get("host", defaults.host)),
-        port=int(data.get("port", defaults.port)) if str(data.get("port", "")).isdigit() else defaults.port,
+        port=str(data.get("port", defaults.port)),
         user=str(data.get("user", defaults.user)),
         remote_folder=str(data.get("remote_folder", defaults.remote_folder)),
         plain_names=bool(data.get("plain_names", defaults.plain_names)),

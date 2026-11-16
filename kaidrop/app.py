@@ -61,7 +61,7 @@ class KaiDrop(_Root):
         conn = ttk.Frame(self)
         conn.pack(fill="x", padx=10, pady=(10, 4))
         self.host = tk.StringVar(value=self.saved.host)
-        self.port = tk.StringVar(value=str(self.saved.port))
+        self.port = tk.StringVar(value=self.saved.port)
         self.user = tk.StringVar(value=self.saved.user)
         self.password = tk.StringVar()
         for label, var, width, show in [("Host", self.host, 16, ""), ("Port", self.port, 6, ""),
@@ -147,8 +147,7 @@ class KaiDrop(_Root):
         self._remember()
 
     def _remember(self) -> None:
-        port = int(self.port.get()) if self.port.get().strip().isdigit() else 5000
-        settings.save(settings.Settings(self.host.get().strip(), port, self.user.get().strip() or "anonymous",
+        settings.save(settings.Settings(self.host.get().strip(), self.port.get().strip(), self.user.get().strip(),
                                         self.remote.path, self.plain.get(), str(self.local.path)))
 
     # --- Choosing what to send ---
