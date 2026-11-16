@@ -75,7 +75,6 @@ class KaiDrop(_Root):
         ttk.Label(self, text=EXPLANATION, wraplength=1140, foreground="#666").pack(fill="x", padx=12)
 
         panes = ttk.PanedWindow(self, orient="horizontal")
-        panes.pack(fill="both", expand=True, padx=10, pady=8)
         self.local = LocalPane(panes, self.saved.local_folder, self._send_selected)
         middle = ttk.Frame(panes, width=70)
         ttk.Button(middle, text="Send →", command=self._send_selected).pack(expand=True, padx=6)
@@ -94,7 +93,7 @@ class KaiDrop(_Root):
             self.remote.tree.dnd_bind("<<Drop>>", self._os_drop)
 
         lower = ttk.Frame(self)
-        lower.pack(fill="x", padx=10)
+        lower.pack(side="bottom", fill="x", padx=10)
         head = ttk.Frame(lower)
         head.pack(fill="x")
         ttk.Label(head, text="Transfers", font=("Segoe UI", 10, "bold")).pack(side="left")
@@ -112,7 +111,9 @@ class KaiDrop(_Root):
         self.progress = ttk.Progressbar(lower, mode="determinate")
         self.progress.pack(fill="x")
         self.status = ttk.Label(self, text="Type the console's address (OunceShell's FTP screen shows it) and Connect.")
-        self.status.pack(fill="x", padx=12, pady=(4, 10))
+        self.status.pack(side="bottom", fill="x", padx=12, pady=(4, 10), before=lower)
+        # Packed last, the panes get the height left: the transfers and status line always show.
+        panes.pack(fill="both", expand=True, padx=10, pady=8)
 
     def _set_status(self, text: str) -> None:
         self.status.config(text=text)
