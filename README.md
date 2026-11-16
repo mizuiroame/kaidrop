@@ -3,6 +3,10 @@
 **Send music (or anything) from your computer to a Switch 2 running kaiHEN,
 over FTP — with file names the console can actually list.**
 
+> **Work in progress.** KaiDrop works today for sending folders and files.
+> Next: a two-pane view like FileZilla (your computer on the left, the
+> console on the right) with drag and drop.
+
 ![KaiDrop](docs/kaidrop.png)
 
 ## The problem
@@ -10,9 +14,12 @@ over FTP — with file names the console can actually list.**
 On Switch 2, a file or folder whose name has a character outside basic
 ASCII — an accented letter such as **á, é, ñ, ü**, typographic quotes such as
 **’**, or Japanese, Chinese or Korean — is saved to the SD card, but the
-console's directory listing leaves it out. Every app is affected: FTP
-listings, OunceShell's file browser, KaiPlayer and any other homebrew. The
-file takes up space but nothing can see it.
+console's file system leaves it out of its folder: it isn't listed, and it
+isn't even counted among the folder's entries. Every app sees folders through
+that file system, so every app is affected: FTP listings, OunceShell's file
+browser, KaiPlayer and any other homebrew. The file takes up space but
+nothing can see it, and nothing on the console can find it to rename it: the
+names have to be right before the files get there.
 
 So `06 Canción.flac` uploaded with FileZilla is invisible, while
 `06 Cancion.flac` works.
@@ -39,7 +46,8 @@ So `06 Canción.flac` uploaded with FileZilla is invisible, while
 Music players such as [KaiPlayer](https://github.com/mizuiroame/kaiplayer)
 read the title, artist and album from the songs' tags, so they still show
 **Canción** with its accent, or the Japanese title, whatever the file is
-called.
+called. That relies on the songs being tagged: a song without tags is shown
+by its file name, which on the console is the plain one.
 
 ## Use it
 
