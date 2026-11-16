@@ -52,7 +52,7 @@ class KaiDrop(tk.Tk):
         if "vista" in style.theme_names():
             style.theme_use("vista")
 
-        conn = ttk.LabelFrame(self, text="Console (OunceShell FTP)")
+        conn = ttk.LabelFrame(self, text="FTP server (for example OunceShell on the console)")
         conn.pack(fill="x", **pad)
         self.host = tk.StringVar(value=self.saved.host)
         self.port = tk.StringVar(value=str(self.saved.port))
@@ -66,7 +66,7 @@ class KaiDrop(tk.Tk):
         self.test_button = ttk.Button(conn, text="Test connection", command=self._test)
         self.test_button.grid(row=0, column=8, padx=10)
 
-        dest = ttk.LabelFrame(self, text="Send to (folder on the SD card)")
+        dest = ttk.LabelFrame(self, text="Send to (folder on the server)")
         dest.pack(fill="x", **pad)
         self.remote = tk.StringVar(value=self.saved.remote_folder)
         ttk.Entry(dest, textvariable=self.remote, width=40).pack(side="left", padx=10, pady=8)
@@ -90,7 +90,7 @@ class KaiDrop(tk.Tk):
 
         columns = ("local", "remote", "size", "status")
         self.tree = ttk.Treeview(files, columns=columns, show="headings", selectmode="none")
-        for name, title, width in [("local", "On this computer", 300), ("remote", "On the console", 360),
+        for name, title, width in [("local", "On this computer", 300), ("remote", "On the server", 360),
                                    ("size", "Size", 80), ("status", "Status", 100)]:
             self.tree.heading(name, text=title)
             self.tree.column(name, width=width, anchor="e" if name == "size" else "w")
@@ -109,7 +109,7 @@ class KaiDrop(tk.Tk):
         self.status.pack(side="left")
         self.cancel_button = ttk.Button(bottom, text="Cancel", command=self.cancel.set, state="disabled")
         self.cancel_button.pack(side="right")
-        self.send_button = ttk.Button(bottom, text="Send to the console", command=self._send)
+        self.send_button = ttk.Button(bottom, text="Send files", command=self._send)
         self.send_button.pack(side="right", padx=6)
 
     # --- Choosing what to send ---
@@ -146,7 +146,7 @@ class KaiDrop(tk.Tk):
         renamed = self.plan.renamed_count
         text = f"{len(self.plan.items)} files, {_size(self.plan.total_bytes)}"
         if renamed:
-            text += f" · {renamed} renamed on the console"
+            text += f" · {renamed} renamed on the server"
         self.summary.config(text=text if self.plan.items else "")
         self.status.config(text="Ready to send." if self.plan.items else "Add a folder or files to send.")
 

@@ -19,8 +19,8 @@ So `06 Canción.flac` uploaded with FileZilla is invisible, while
 
 ## What KaiDrop does
 
-- Sends folders and files to the console over FTP (OunceShell's FTP server),
-  keeping the folder structure.
+- Sends folders and files over FTP, keeping the folder structure. It works
+  with any FTP server; on the console, use OunceShell's.
 - With **Plain names for Switch 2** on (the default), it gives each copy on
   the console a name it can list:
   - accents are dropped: `Canción` → `Cancion`, `Ñandú` → `Nandu`;
@@ -50,7 +50,7 @@ called.
      your server asks for them). **Test connection** checks them.
    - In **Send to**, type the folder on the SD card, for example `/Music`.
    - **Add folder…** or **Add files…**. The list shows where each file goes.
-3. Press **Send to the console**. The progress bar and the **Status** column
+3. Press **Send files**. The progress bar and the **Status** column
    show how it goes; **Cancel** stops it (a half-sent file is removed).
 
 ## Download
