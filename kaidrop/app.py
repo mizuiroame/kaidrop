@@ -1,262 +1,292 @@
-"""KaiDrop's window: where to send, what to send, and the upload itself."""
+"""KaiDrop's window: this computer on the left, the server on the right, and
+the transfer queue below. Drag files or folders onto the server to send them."""
 from __future__ import annotations
 
+import posixpath
 import queue
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import messagebox, ttk
+from typing import Callable
 
 from . import __version__, settings
-from .ftp import Connection, Status, test_connection, upload
-from .plan import Plan, build_plan
+from .ftp import Connection, Status, upload
+from .panes import LocalPane, RemotePane, human_size
+from .plan import build_plan
+from .remote import RemoteSession
 
-POLL_MS = 80
-EXPLANATION = (
-    "Switch 2 hides files and folders whose names have accents (á, ñ…) or other non-ASCII characters "
-    "(like Japanese): they are saved but no app can list them. With this option on, the copies on the "
-    "console get plain names. Your files here are never renamed, and players such as KaiPlayer still "
-    "show the real titles from the tags."
-)
+try:  # Drops from Explorer or Finder, when tkinterdnd2 is installed.
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    _Root = TkinterDnD.Tk
+except ImportError:
+    DND_FILES = None
+    _Root = tk.Tk
+
+POLL_MS = 60
+DRAG_THRESHOLD = 8
+EXPLANATION = ("Switch 2 hides files and folders whose names have accents (á, ñ…) or other non-ASCII "
+               "characters: they are saved, but no app on the console can see them. With plain names on, the "
+               "copies on the console get names it can list. Your files here are never renamed.")
 
 
-def _size(n: int) -> str:
-    for unit in ("B", "KB", "MB", "GB"):
-        if n < 1024 or unit == "GB":
-            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
-        n /= 1024
-    return f"{n} B"
-
-
-class KaiDrop(tk.Tk):
+class KaiDrop(_Root):
     def __init__(self) -> None:
         super().__init__()
         self.title(f"KaiDrop {__version__}")
-        self.minsize(880, 600)
+        self.geometry("1180x760")
+        self.minsize(900, 600)
         self.saved = settings.load()
-        self.sources: list[Path] = []
-        self.plan = Plan((), ())
-        self.events: queue.Queue = queue.Queue()
+        self.events: queue.Queue = queue.Queue()  # Callables to run on this thread.
+        self.jobs: queue.Queue = queue.Queue()    # Batches to send, in order.
         self.cancel = threading.Event()
-        self.busy = False
+        self.session: RemoteSession | None = None
+        self.conn: Connection | None = None
+        self.sending = False
+        self.queue_rows = 0
+        self._drag_start: tuple[int, int] | None = None
+        self._dragging = False
         self._build()
-        self._refresh_plan()
+        threading.Thread(target=self._transfer_worker, daemon=True).start()
         self.after(POLL_MS, self._poll)
         self.protocol("WM_DELETE_WINDOW", self._close)
 
     # --- Layout ---
 
     def _build(self) -> None:
-        pad = {"padx": 10, "pady": 6}
         style = ttk.Style(self)
         if "vista" in style.theme_names():
             style.theme_use("vista")
 
-        conn = ttk.LabelFrame(self, text="FTP server (for example OunceShell on the console)")
-        conn.pack(fill="x", **pad)
+        conn = ttk.Frame(self)
+        conn.pack(fill="x", padx=10, pady=(10, 4))
         self.host = tk.StringVar(value=self.saved.host)
         self.port = tk.StringVar(value=str(self.saved.port))
         self.user = tk.StringVar(value=self.saved.user)
         self.password = tk.StringVar()
-        for col, (label, var, width, show) in enumerate(
-            [("IP address", self.host, 16, ""), ("Port", self.port, 6, ""), ("User", self.user, 12, ""),
-             ("Password", self.password, 12, "•")]):
-            ttk.Label(conn, text=label).grid(row=0, column=col * 2, sticky="w", padx=(10, 4), pady=8)
-            ttk.Entry(conn, textvariable=var, width=width, show=show).grid(row=0, column=col * 2 + 1, sticky="w")
-        self.test_button = ttk.Button(conn, text="Test connection", command=self._test)
-        self.test_button.grid(row=0, column=8, padx=10)
-
-        dest = ttk.LabelFrame(self, text="Send to (folder on the server)")
-        dest.pack(fill="x", **pad)
-        self.remote = tk.StringVar(value=self.saved.remote_folder)
-        ttk.Entry(dest, textvariable=self.remote, width=40).pack(side="left", padx=10, pady=8)
-        self.remote.trace_add("write", lambda *_: self._refresh_plan())
+        for label, var, width, show in [("Host", self.host, 16, ""), ("Port", self.port, 6, ""),
+                                        ("User", self.user, 12, ""), ("Password", self.password, 12, "•")]:
+            ttk.Label(conn, text=label).pack(side="left", padx=(0, 4))
+            ttk.Entry(conn, textvariable=var, width=width, show=show).pack(side="left", padx=(0, 12))
+        self.connect_button = ttk.Button(conn, text="Connect", command=self._toggle_connection)
+        self.connect_button.pack(side="left")
         self.plain = tk.BooleanVar(value=self.saved.plain_names)
-        ttk.Checkbutton(dest, text="Plain names for Switch 2 (recommended)", variable=self.plain,
-                        command=self._refresh_plan).pack(side="left", padx=10)
+        ttk.Checkbutton(conn, text="Plain names for Switch 2", variable=self.plain).pack(side="right")
+        ttk.Label(self, text=EXPLANATION, wraplength=1140, foreground="#666").pack(fill="x", padx=12)
 
-        info = ttk.Label(self, text=EXPLANATION, wraplength=840, foreground="#555")
-        info.pack(fill="x", padx=14)
+        panes = ttk.PanedWindow(self, orient="horizontal")
+        panes.pack(fill="both", expand=True, padx=10, pady=8)
+        self.local = LocalPane(panes, self.saved.local_folder)
+        middle = ttk.Frame(panes, width=70)
+        ttk.Button(middle, text="Send →", command=self._send_selected).pack(expand=True, padx=6)
+        self.remote = RemotePane(panes, self.saved.remote_folder, self._set_status)
+        panes.add(self.local, weight=1)
+        panes.add(middle, weight=0)
+        panes.add(self.remote, weight=1)
 
-        files = ttk.LabelFrame(self, text="What to send")
-        files.pack(fill="both", expand=True, **pad)
-        bar = ttk.Frame(files)
-        bar.pack(fill="x", padx=8, pady=6)
-        ttk.Button(bar, text="Add folder…", command=self._add_folder).pack(side="left")
-        ttk.Button(bar, text="Add files…", command=self._add_files).pack(side="left", padx=6)
-        ttk.Button(bar, text="Clear", command=self._clear).pack(side="left")
-        self.summary = ttk.Label(bar, text="")
-        self.summary.pack(side="right")
+        tree = self.local.tree  # Dragging from the left list onto the server.
+        tree.bind("<ButtonPress-1>", self._drag_press, add="+")
+        tree.bind("<B1-Motion>", self._drag_motion, add="+")
+        tree.bind("<ButtonRelease-1>", self._drag_release, add="+")
+        if DND_FILES:
+            self.remote.tree.drop_target_register(DND_FILES)
+            self.remote.tree.dnd_bind("<<Drop>>", self._os_drop)
 
-        columns = ("local", "remote", "size", "status")
-        self.tree = ttk.Treeview(files, columns=columns, show="headings", selectmode="none")
-        for name, title, width in [("local", "On this computer", 300), ("remote", "On the server", 360),
-                                   ("size", "Size", 80), ("status", "Status", 100)]:
-            self.tree.heading(name, text=title)
-            self.tree.column(name, width=width, anchor="e" if name == "size" else "w")
-        self.tree.tag_configure("renamed", foreground="#a0408c")
-        self.tree.tag_configure("failed", foreground="#c0392b")
-        scroll = ttk.Scrollbar(files, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scroll.set)
-        self.tree.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=(0, 8))
-        scroll.pack(side="right", fill="y", pady=(0, 8), padx=(0, 8))
-
-        bottom = ttk.Frame(self)
-        bottom.pack(fill="x", **pad)
-        self.progress = ttk.Progressbar(bottom, mode="determinate")
-        self.progress.pack(fill="x", side="top", pady=(0, 6))
-        self.status = ttk.Label(bottom, text="Add a folder or files to send.")
-        self.status.pack(side="left")
-        self.cancel_button = ttk.Button(bottom, text="Cancel", command=self.cancel.set, state="disabled")
+        lower = ttk.Frame(self)
+        lower.pack(fill="x", padx=10)
+        head = ttk.Frame(lower)
+        head.pack(fill="x")
+        ttk.Label(head, text="Transfers", font=("Segoe UI", 10, "bold")).pack(side="left")
+        self.cancel_button = ttk.Button(head, text="Cancel", command=self._cancel, state="disabled")
         self.cancel_button.pack(side="right")
-        self.send_button = ttk.Button(bottom, text="Send files", command=self._send)
-        self.send_button.pack(side="right", padx=6)
+        ttk.Button(head, text="Clear finished", command=self._clear_finished).pack(side="right", padx=6)
+        self.queue = ttk.Treeview(lower, columns=("remote", "size", "status"), height=7)
+        for col, title, width in [("#0", "From this computer", 380), ("remote", "To the server", 420),
+                                  ("size", "Size", 90), ("status", "Status", 140)]:
+            self.queue.heading(col, text=title)
+            self.queue.column(col, width=width, anchor="e" if col == "size" else "w")
+        self.queue.tag_configure("renamed", foreground="#a0408c")
+        self.queue.tag_configure("failed", foreground="#c0392b")
+        self.queue.pack(fill="x", pady=4)
+        self.progress = ttk.Progressbar(lower, mode="determinate")
+        self.progress.pack(fill="x")
+        self.status = ttk.Label(self, text="Type the console's address (OunceShell's FTP screen shows it) and Connect.")
+        self.status.pack(fill="x", padx=12, pady=(4, 10))
 
-    # --- Choosing what to send ---
+    def _set_status(self, text: str) -> None:
+        self.status.config(text=text)
 
-    def _add_folder(self) -> None:
-        folder = filedialog.askdirectory(title="Choose a folder to send")
-        if folder:
-            self._add([Path(folder)])
-
-    def _add_files(self) -> None:
-        names = filedialog.askopenfilenames(title="Choose files to send")
-        self._add([Path(n) for n in names])
-
-    def _add(self, paths: list[Path]) -> None:
-        for path in paths:
-            if path not in self.sources:
-                self.sources.append(path)
-        self._refresh_plan()
-
-    def _clear(self) -> None:
-        if not self.busy:
-            self.sources.clear()
-            self._refresh_plan()
-
-    def _refresh_plan(self) -> None:
-        if self.busy:
-            return
-        self.plan = build_plan(self.sources, self.remote.get(), self.plain.get())
-        self.tree.delete(*self.tree.get_children())
-        for i, item in enumerate(self.plan.items):
-            local = Path(*item.local.parts[-2:])  # Its folder and name: enough to recognize it.
-            self.tree.insert("", "end", iid=str(i), values=(str(local), item.remote, _size(item.size), ""),
-                             tags=("renamed",) if item.renamed else ())
-        renamed = self.plan.renamed_count
-        text = f"{len(self.plan.items)} files, {_size(self.plan.total_bytes)}"
-        if renamed:
-            text += f" · {renamed} renamed on the server"
-        self.summary.config(text=text if self.plan.items else "")
-        self.status.config(text="Ready to send." if self.plan.items else "Add a folder or files to send.")
-
-    # --- Connection and upload (on a thread; results come back through events) ---
+    # --- Connecting ---
 
     def _connection(self) -> Connection | None:
         host = self.host.get().strip()
         if not host:
-            messagebox.showwarning("KaiDrop", "Type the console's IP address, as OunceShell's FTP screen shows it.")
+            messagebox.showwarning("KaiDrop", "Type the server's address, as OunceShell's FTP screen shows it.")
             return None
         if not self.port.get().strip().isdigit():
             messagebox.showwarning("KaiDrop", "The port is a number, as OunceShell's FTP screen shows it.")
             return None
         return Connection(host, int(self.port.get()), self.user.get().strip() or "anonymous", self.password.get())
 
-    def _remember(self) -> None:
-        settings.save(settings.Settings(self.host.get().strip(), int(self.port.get() or 5000),
-                                        self.user.get().strip() or "anonymous", self.remote.get(), self.plain.get()))
-
-    def _test(self) -> None:
+    def _toggle_connection(self) -> None:
+        if self.session:
+            self.session.close()
+            self.session = None
+            self.remote.attach(None)
+            self.connect_button.config(text="Connect")
+            self._set_status("Disconnected.")
+            return
         conn = self._connection()
         if not conn:
             return
-        self.test_button.config(state="disabled")
-        self.status.config(text="Connecting…")
-
-        def work() -> None:
-            try:
-                self.events.put(("tested", test_connection(conn)))
-            except Exception as e:  # Any failure is shown to the user.
-                self.events.put(("test_failed", str(e)))
-
-        threading.Thread(target=work, daemon=True).start()
-
-    def _send(self) -> None:
-        conn = self._connection()
-        if not conn or self.busy:
-            return
-        if not self.plan.items:
-            messagebox.showinfo("KaiDrop", "Add a folder or files first.")
-            return
+        self.conn = conn
+        self.session = RemoteSession(conn, self.events.put)
+        self.connect_button.config(text="Disconnect")
+        self.remote.attach(self.session)
         self._remember()
-        self.busy = True
-        self.cancel.clear()
-        self.send_button.config(state="disabled")
-        self.cancel_button.config(state="normal")
-        self.progress.config(maximum=max(self.plan.total_bytes, 1), value=0)
-        for iid in self.tree.get_children():
-            self.tree.set(iid, "status", "")
-        plan = self.plan
 
-        def work() -> None:
+    def _remember(self) -> None:
+        port = int(self.port.get()) if self.port.get().strip().isdigit() else 5000
+        settings.save(settings.Settings(self.host.get().strip(), port, self.user.get().strip() or "anonymous",
+                                        self.remote.path, self.plain.get(), str(self.local.path)))
+
+    # --- Choosing what to send ---
+
+    def _send_selected(self) -> None:
+        paths = self.local.selected_paths()
+        if not paths:
+            self._set_status("Select files or folders on the left, then Send → (or drag them to the right).")
+            return
+        self._queue_send(paths, self.remote.path)
+
+    def _drag_press(self, event: tk.Event) -> None:
+        self._drag_start = (event.x_root, event.y_root)
+        self._dragging = False
+
+    def _drag_motion(self, event: tk.Event) -> None:
+        if self._drag_start and not self._dragging:
+            dx, dy = event.x_root - self._drag_start[0], event.y_root - self._drag_start[1]
+            if abs(dx) + abs(dy) > DRAG_THRESHOLD and self.local.selected():
+                self._dragging = True
+                self.config(cursor="hand2")
+
+    def _drag_release(self, event: tk.Event) -> None:
+        dragging, self._dragging, self._drag_start = self._dragging, False, None
+        self.config(cursor="")
+        if not dragging:
+            return
+        if self.winfo_containing(event.x_root, event.y_root) is not self.remote.tree:
+            return
+        self._queue_send(self.local.selected_paths(), self._drop_folder(event.y_root))
+
+    def _drop_folder(self, y_root: int) -> str:
+        """Dropped on a folder row: into it; anywhere else: the folder shown."""
+        row = self.remote.row_at(y_root - self.remote.tree.winfo_rooty())
+        if row and row[1]:
+            return posixpath.join(self.remote.path, row[0])
+        return self.remote.path
+
+    def _os_drop(self, event) -> None:
+        paths = [Path(p) for p in self.tk.splitlist(event.data)]
+        self._queue_send(paths, self._drop_folder(event.y_root))
+
+    # --- Transfers (a worker thread sends one batch after another) ---
+
+    def _queue_send(self, sources: list[Path], folder: str) -> None:
+        if not self.session or not self.conn:
+            messagebox.showinfo("KaiDrop", "Connect to the server first.")
+            return
+        plan = build_plan(sources, folder, self.plain.get())
+        if not plan.items:
+            self._set_status("Nothing to send there (empty folders?).")
+            return
+        first = self.queue_rows
+        for item in plan.items:
+            iid = str(self.queue_rows)
+            self.queue_rows += 1
+            self.queue.insert("", "end", iid=iid, text=str(Path(*item.local.parts[-2:])),
+                              values=(item.remote, human_size(item.size), "Waiting"),
+                              tags=("renamed",) if item.renamed else ())
+        self.sending = True
+        self.jobs.put((self.conn, plan, first, folder))
+        self._remember()
+        renamed = f", {plan.renamed_count} with plain names" if plan.renamed_count else ""
+        self._set_status(f"Queued {len(plan.items)} files ({human_size(plan.total_bytes)}){renamed}.")
+
+    def _transfer_worker(self) -> None:
+        while True:
+            conn, plan, first, folder = self.jobs.get()
+            post: Callable = self.events.put
+            post(lambda p=plan: self._started(p))
             try:
                 counts = upload(conn, plan,
-                                lambda i, item, sent, total: self.events.put(("progress", i, total)),
-                                lambda i, item, status, msg: self.events.put(("done", i, status, msg)),
+                                lambda i, item, sent, total: post(lambda r=first + i, t=total: self._progress(r, t)),
+                                lambda i, item, st, msg: post(lambda r=first + i, s=st, m=msg: self._row_done(r, s, m)),
                                 self.cancel)
-                self.events.put(("finished", counts))
-            except Exception as e:  # Connection errors end the upload with a message.
-                self.events.put(("failed", str(e)))
+                post(lambda c=counts, d=folder: self._finished(c, d))
+            except Exception as e:  # Connection problems end this batch with a message.
+                post(lambda m=str(e): self._failed(m))
 
-        threading.Thread(target=work, daemon=True).start()
+    def _started(self, plan) -> None:
+        self.sending = True
+        self.cancel.clear()
+        self.cancel_button.config(state="normal")
+        self.progress.config(maximum=max(plan.total_bytes, 1), value=0)
+
+    def _progress(self, row: int, total: int) -> None:
+        self.progress.config(value=total)
+        if self.queue.exists(str(row)) and self.queue.set(str(row), "status") == "Waiting":
+            self.queue.set(str(row), "status", "Sending…")
+
+    def _row_done(self, row: int, status: Status, message: str) -> None:
+        iid = str(row)
+        if not self.queue.exists(iid):
+            return
+        self.queue.set(iid, "status", status.value if status is not Status.FAILED else f"Failed: {message}"[:40])
+        if status is Status.FAILED:
+            self.queue.item(iid, tags=("failed",))
+        self.queue.see(iid)
+
+    def _finished(self, counts: dict, folder: str) -> None:
+        self._end_batch()
+        self._set_status(f"Done: {counts[Status.SENT]} sent, {counts[Status.SKIPPED]} already there, "
+                         f"{counts[Status.FAILED]} failed, {counts[Status.CANCELLED]} cancelled.")
+        if self.session and folder.startswith(self.remote.path):
+            self.remote.refresh(quiet=True)
+
+    def _failed(self, message: str) -> None:
+        self._end_batch()
+        self._set_status(f"Stopped: {message}")
+        messagebox.showerror("KaiDrop", f"The transfer stopped: {message}")
+
+    def _end_batch(self) -> None:
+        self.sending = not self.jobs.empty()
+        self.cancel_button.config(state="normal" if self.sending else "disabled")
+
+    def _cancel(self) -> None:
+        self.cancel.set()  # Stops the batch being sent; batches queued after it still go.
+        self._set_status("Cancelling…")
+
+    def _clear_finished(self) -> None:
+        for iid in self.queue.get_children():
+            if self.queue.set(iid, "status") not in ("Waiting", "Sending…"):
+                self.queue.delete(iid)
 
     def _poll(self) -> None:
         try:
             while True:
-                self._handle(self.events.get_nowait())
+                self.events.get_nowait()()
         except queue.Empty:
             pass
         self.after(POLL_MS, self._poll)
 
-    def _handle(self, event: tuple) -> None:
-        kind = event[0]
-        if kind == "tested":
-            self.test_button.config(state="normal")
-            self.status.config(text="Connected. " + event[1][:80])
-            self._remember()
-        elif kind == "test_failed":
-            self.test_button.config(state="normal")
-            self.status.config(text="Could not connect.")
-            messagebox.showerror("KaiDrop", f"Could not connect: {event[1]}\n\nCheck that OunceShell's FTP server "
-                                            "is running and the IP address and port match its screen.")
-        elif kind == "progress":
-            _, index, total = event
-            self.progress.config(value=total)
-            self.status.config(text=f"Sending {index + 1} of {len(self.plan.items)}…  {_size(total)} of "
-                                    f"{_size(self.plan.total_bytes)}")
-        elif kind == "done":
-            _, index, status, message = event
-            self.tree.set(str(index), "status", status.value)
-            if status is Status.FAILED:
-                self.tree.item(str(index), tags=("failed",))
-                self.tree.set(str(index), "status", f"Failed: {message}"[:40])
-            self.tree.see(str(index))
-        elif kind in ("finished", "failed"):
-            self.busy = False
-            self.send_button.config(state="normal")
-            self.cancel_button.config(state="disabled")
-            if kind == "failed":
-                self.status.config(text="Stopped.")
-                messagebox.showerror("KaiDrop", f"The upload stopped: {event[1]}")
-                return
-            counts = event[1]
-            self.status.config(text=f"Done: {counts[Status.SENT]} sent, {counts[Status.SKIPPED]} already there, "
-                                    f"{counts[Status.FAILED]} failed, {counts[Status.CANCELLED]} cancelled.")
-
     def _close(self) -> None:
-        if self.busy and not messagebox.askyesno("KaiDrop", "An upload is running. Stop it and quit?"):
+        if self.sending and not messagebox.askyesno("KaiDrop", "A transfer is running. Stop it and quit?"):
             return
         self.cancel.set()
+        self._remember()
+        if self.session:
+            self.session.close()
         self.destroy()
 
 

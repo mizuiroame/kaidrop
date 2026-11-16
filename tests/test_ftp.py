@@ -66,3 +66,36 @@ class FtpTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(FTPServer is None, "pyftpdlib is not installed")
+class BrowseTest(FtpTest):
+    def test_list_and_delete(self):
+        from kaidrop.ftp import connect
+        from kaidrop.remote import delete_tree, list_dir
+
+        self.run_upload()
+        ftp = connect(self.conn)
+        try:
+            entries = list_dir(ftp, "/Music")
+            self.assertEqual([(e.name, e.is_dir) for e in entries], [("Disco N", True)])
+            files = list_dir(ftp, "/Music/Disco N")
+            self.assertEqual({e.name for e in files}, {"01 Cancion.flac", "cover.jpg"})
+            self.assertEqual(next(e.size for e in files if e.name == "cover.jpg"), 3)
+            delete_tree(ftp, "/Music", True)
+            self.assertEqual(list_dir(ftp, "/"), [])
+        finally:
+            ftp.quit()
+
+    def test_session_runs_jobs_in_order(self):
+        import queue as q
+
+        from kaidrop.remote import RemoteSession, list_dir
+
+        results = q.Queue()
+        session = RemoteSession(self.conn, lambda fn: fn())
+        session.submit(lambda ftp: ftp.mkd("/A"), lambda r: results.put("made"), results.put)
+        session.submit(lambda ftp: [e.name for e in list_dir(ftp, "/")], results.put, results.put)
+        self.assertEqual(results.get(timeout=5), "made")
+        self.assertEqual(results.get(timeout=5), ["A"])
+        session.close()

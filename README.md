@@ -3,9 +3,8 @@
 **Send music (or anything) from your computer to a Switch 2 running kaiHEN,
 over FTP — with file names the console can actually list.**
 
-> **Work in progress.** KaiDrop works today for sending folders and files.
-> Next: a two-pane view like FileZilla (your computer on the left, the
-> console on the right) with drag and drop.
+> **Work in progress.** Sending works (tested with over a gigabyte of music
+> on a Switch 2). Downloading from the console and renaming on it are next.
 
 ![KaiDrop](docs/kaidrop.png)
 
@@ -53,13 +52,19 @@ by its file name, which on the console is the plain one.
 
 1. On the console, open **OunceShell** and start its **FTP server**. Note
    the IP address and port it shows.
-2. On your computer, open **KaiDrop**:
-   - Type the **IP address** and **port** (and the user and password, if
-     your server asks for them). **Test connection** checks them.
-   - In **Send to**, type the folder on the SD card, for example `/Music`.
-   - **Add folder…** or **Add files…**. The list shows where each file goes.
-3. Press **Send files**. The progress bar and the **Status** column
-   show how it goes; **Cancel** stops it (a half-sent file is removed).
+2. On your computer, open **KaiDrop**, type the **Host** (the IP address)
+   and **Port** (and the user and password, if your server asks for them),
+   and press **Connect**.
+3. KaiDrop looks like FileZilla: **your computer on the left, the console on
+   the right**. Browse both sides (double-click a folder, **↑** goes up, or
+   type a path and press Enter). On the right you can also make a **New
+   folder** or **Delete**.
+4. Send files or folders by **dragging them from the left onto the right**
+   (onto a folder to send them into it), by dragging them from Explorer, or
+   by selecting them and pressing **Send →**.
+5. The **Transfers** list shows each file, the name it gets on the console
+   (renamed ones in color) and how it went. **Cancel** stops the batch being
+   sent (a half-sent file is removed); **Clear finished** tidies the list.
 
 ## Download
 
@@ -87,7 +92,9 @@ powershell -File build.ps1                         # builds dist/KaiDrop.exe
 | `kaidrop/names.py` | The plain names for the console |
 | `kaidrop/plan.py` | What goes where: the files and their names on the console |
 | `kaidrop/ftp.py` | The upload: folders, skipping, progress, cancel |
-| `kaidrop/app.py` | The window (Tkinter) |
+| `kaidrop/app.py` | The window: connection, the two panes, drag and drop, transfers |
+| `kaidrop/panes.py` | The file panes: this computer and the server |
+| `kaidrop/remote.py` | Browsing the server: listings (MLSD or LIST), deleting, its own thread |
 | `kaidrop/settings.py` | Remembers the address and folder (never the password) |
 
 ## Legal notice

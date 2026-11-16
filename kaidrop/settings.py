@@ -12,8 +12,9 @@ class Settings:
     host: str = ""
     port: int = 5000
     user: str = "anonymous"
-    remote_folder: str = "/Music"
+    remote_folder: str = "/"
     plain_names: bool = True
+    local_folder: str = ""
 
 
 def _path() -> Path:
@@ -33,6 +34,7 @@ def load() -> Settings:
         user=str(data.get("user", defaults.user)),
         remote_folder=str(data.get("remote_folder", defaults.remote_folder)),
         plain_names=bool(data.get("plain_names", defaults.plain_names)),
+        local_folder=str(data.get("local_folder", defaults.local_folder)),
     )
 
 

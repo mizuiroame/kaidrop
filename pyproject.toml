@@ -1,6 +1,6 @@
 [project]
 name = "kaidrop"
-version = "0.1.1"
+version = "0.2.0"
 description = "Send music to a Switch 2 over FTP, with file names the console can list."
 readme = "README.md"
 license = {text = "MIT"}
