@@ -155,10 +155,10 @@ def upload(conn: Connection, plan: Plan, on_progress: ProgressFn, on_done: DoneF
                     on_done(index, item, Status.CANCELLED, "")
                     counts[Status.CANCELLED] += 1
                     continue
-                if choice is Choice.SKIP:
+                if choice is Choice.SKIP:  # Done first, so the progress jump isn't taken for speed.
                     total_sent += item.size
-                    on_progress(index, item, item.size, total_sent)
                     on_done(index, item, Status.SKIPPED, "")
+                    on_progress(index, item, item.size, total_sent)
                     counts[Status.SKIPPED] += 1
                     continue
                 if choice is Choice.KEEP_BOTH:

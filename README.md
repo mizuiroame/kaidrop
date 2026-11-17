@@ -86,7 +86,9 @@ by its file name, which on the console is the plain one.
    and **Ctrl+A** selects everything. Dragging any of the selected files takes
    them all.
 5. The **Transfers** tab shows each file, where it comes from and goes
-   (renamed ones in color) and how it went. **Cancel** stops the batch being
+   (renamed ones in color) and how it went; above it, how much is done, the
+   speed and the time left (*11.7 MB of 1.1 GB · 3.9 MB/s · 4 min 50 s
+   left*). **Cancel** stops the batch being
    moved (a half-moved file is removed); **Clear finished** tidies the list.
    A file being moved is called `name.part` until it's complete, so if the
    connection is lost halfway, no half file is left with the real name (a

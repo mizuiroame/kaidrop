@@ -21,6 +21,7 @@ from .ftp import Choice, Connection, RemoteFile, Status, upload
 from .logview import ERROR, GOOD, INFO, LogView
 from .panes import LocalPane, RemotePane, human_size
 from .plan import UploadItem, build_plan
+from .rate import RateMeter, describe
 from .remote import CONNECTED, CONNECTING, LOST, RemoteSession, _reason
 
 try:  # Drops from Explorer or Finder, when tkinterdnd2 is installed.
@@ -31,6 +32,7 @@ except ImportError:
     _Root = tk.Tk
 
 POLL_MS = 60
+RATE_EVERY_S = 0.25  # How often the speed and time left are redrawn.
 EXPLANATION = ("Switch 2 hides files and folders whose names have accents (á, ñ…) or other non-ASCII "
                "characters: they are saved, but no app on the console can see them. With plain names on, the "
                "copies on the console get names it can list. Your files here are never renamed.")
@@ -54,6 +56,8 @@ class KaiDrop(_Root):
         self.receiving_rows: set[str] = set()  # Rows of downloads, to word their status.
         self.ended: dict[str, Status] = {}     # How each row's transfer ended.
         self.stopped: list[Batch] = []         # What was left when the connection went, to continue.
+        self.meter = RateMeter()
+        self.rate_drawn = 0.0                  # When the speed was last redrawn.
         self._build()
         threading.Thread(target=self._transfer_worker, daemon=True).start()
         self.after(POLL_MS, self._poll)
@@ -109,6 +113,8 @@ class KaiDrop(_Root):
         self.cancel_button = ttk.Button(head, text="Cancel", command=self._cancel, state="disabled")
         self.cancel_button.pack(side="right")
         ttk.Button(head, text="Clear finished", command=self._clear_finished).pack(side="right", padx=6)
+        self.rate = ttk.Label(head, foreground="#555")
+        self.rate.pack(side="left")
         tabs = ttk.Notebook(lower)
         tabs.pack(fill="x", pady=(0, 4))
         self.queue = ttk.Treeview(tabs, columns=("remote", "size", "status"), height=7)
@@ -282,7 +288,8 @@ class KaiDrop(_Root):
             receiving, plan, rows, folder = batch.kind == "down", batch.plan, batch.rows, batch.folder
             post(lambda p=plan, r=receiving: self._started(p, r))
             progress = lambda i, item, sent, total: post(lambda r=rows[i], t=total: self._progress(r, t))  # noqa: E731
-            done = lambda i, item, st, msg: post(lambda r=rows[i], s=st, m=msg: self._row_done(r, s, m))  # noqa: E731
+            done = lambda i, item, st, msg: post(  # noqa: E731
+                lambda r=rows[i], s=st, m=msg, n=item.size: self._row_done(r, s, m, n))
             try:
                 if receiving:
                     counts = download(conn, plan, progress, done, self.cancel, self._ask_download_from_worker)
@@ -318,14 +325,23 @@ class KaiDrop(_Root):
         self.cancel.clear()
         self.cancel_button.config(state="normal")
         self.progress.config(maximum=max(plan.total_bytes, 1), value=0)
+        self.meter.start(plan.total_bytes)
+        self.rate.config(text=describe(0, plan.total_bytes, None, None))
 
     def _progress(self, iid: str, total: int) -> None:
         self.progress.config(value=total)
+        self.meter.update(total)
+        now = self.meter.clock()
+        if now - self.rate_drawn >= RATE_EVERY_S:
+            self.rate_drawn = now
+            self.rate.config(text=describe(total, self.meter.total, self.meter.speed(), self.meter.remaining()))
         if self.queue.exists(iid) and self.queue.set(iid, "status") == "Waiting":
             self.queue.set(iid, "status", "Receiving…" if iid in self.receiving_rows else "Sending…")
 
-    def _row_done(self, iid: str, status: Status, message: str) -> None:
+    def _row_done(self, iid: str, status: Status, message: str, size: int = 0) -> None:
         self.ended[iid] = status
+        if status is Status.SKIPPED:
+            self.meter.skip(size)
         if not self.queue.exists(iid):
             return
         text = status.value
@@ -385,6 +401,7 @@ class KaiDrop(_Root):
         self._set_status(f"Continuing with {left} files.")
 
     def _end_batch(self) -> None:
+        self.rate.config(text="")
         self.sending = not self.jobs.empty()
         self.cancel_button.config(state="normal" if self.sending else "disabled")
 
