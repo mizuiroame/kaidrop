@@ -3,8 +3,8 @@
 **Send music (or anything) from your computer to a Switch 2 running kaiHEN,
 over FTP — with file names the console can actually list.**
 
-> **Work in progress.** Sending and receiving work (tested with over a
-> gigabyte of music on a Switch 2).
+Tested on a Switch 2 with OunceShell's FTP server: over a gigabyte of
+music, and a transfer cut halfway and continued after reconnecting.
 
 ![KaiDrop](docs/kaidrop.png)
 
