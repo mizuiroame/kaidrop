@@ -303,7 +303,8 @@ class RemotePane(FilePane):
     """The server's folders. Every network call goes through the session."""
 
     def __init__(self, master: tk.Misc, start: str, on_status: Callable[[str], None],
-                 plain_names: Callable[[], bool]) -> None:
+                 plain_names: Callable[[], bool], on_download: Callable[[], None]) -> None:
+        self.on_download = on_download
         super().__init__(master, "Server (the console)")
         ttk.Button(self.tools, text="New folder", command=self._new_folder).pack(side="left", padx=(4, 0))
         ttk.Button(self.tools, text="Delete", command=self._delete).pack(side="left", padx=(4, 0))
@@ -359,7 +360,8 @@ class RemotePane(FilePane):
             return [("Connect to the server first", None)]
         sel = self.selected()
         folder = self._single_folder()
-        return [("Open", (lambda: self.open_child(folder)) if folder else None),
+        return [("Download to this computer", self.on_download if sel else None),
+                ("Open", (lambda: self.open_child(folder)) if folder else None),
                 None,
                 ("New folder", self._new_folder),
                 ("Rename", self._rename if len(sel) == 1 else None),

@@ -1,8 +1,10 @@
 """KaiDrop's window: this computer on the left, the server on the right, and
-the transfer queue below. Drag files or folders onto the server to send them."""
+the transfer queue below. Drag files or folders from one side to the other
+(or right-click) to send them to the server or receive them from it."""
 from __future__ import annotations
 
 import posixpath
+from datetime import datetime
 import queue
 import threading
 import tkinter as tk
@@ -11,7 +13,9 @@ from tkinter import messagebox, ttk
 from typing import Callable
 
 from . import __version__, settings
-from .conflict import ConflictDialog
+from .conflict import ConflictDialog, Side
+from .download import DownloadItem, DownloadPlan, LocalFile, download, plan_download
+from .dragdrop import Drag
 from .ftp import Choice, Connection, RemoteFile, Status, upload
 from .logview import ERROR, GOOD, INFO, LogView
 from .panes import LocalPane, RemotePane, human_size
@@ -26,7 +30,6 @@ except ImportError:
     _Root = tk.Tk
 
 POLL_MS = 60
-DRAG_THRESHOLD = 8
 EXPLANATION = ("Switch 2 hides files and folders whose names have accents (á, ñ…) or other non-ASCII "
                "characters: they are saved, but no app on the console can see them. With plain names on, the "
                "copies on the console get names it can list. Your files here are never renamed.")
@@ -47,8 +50,7 @@ class KaiDrop(_Root):
         self.link_state = ""  # The session's connection state; "" when not connected.
         self.sending = False
         self.queue_rows = 0
-        self._drag_start: tuple[int, int] | None = None
-        self._dragging = False
+        self.receiving_rows: set[str] = set()  # Rows of downloads, to word their status.
         self._build()
         threading.Thread(target=self._transfer_worker, daemon=True).start()
         self.after(POLL_MS, self._poll)
@@ -81,18 +83,18 @@ class KaiDrop(_Root):
 
         panes = ttk.PanedWindow(self, orient="horizontal")
         self.local = LocalPane(panes, self.saved.local_folder, self._send_selected)
-        middle = ttk.Frame(panes, width=70)
-        ttk.Button(middle, text="Send →", command=self._send_selected).pack(expand=True, padx=6)
         # The server opens at its root.
-        self.remote = RemotePane(panes, "/", self._set_status, self.plain.get)
+        self.remote = RemotePane(panes, "/", self._set_status, self.plain.get, self._download_selected)
         panes.add(self.local, weight=1)
-        panes.add(middle, weight=0)
         panes.add(self.remote, weight=1)
 
-        tree = self.local.tree  # Dragging from the left list onto the server.
-        tree.bind("<ButtonPress-1>", self._drag_press, add="+")
-        tree.bind("<B1-Motion>", self._drag_motion, add="+")
-        tree.bind("<ButtonRelease-1>", self._drag_release, add="+")
+        connected = lambda: self.session is not None  # noqa: E731
+        Drag(self, self.local, self.remote, "Send",
+             lambda row: posixpath.join(self.remote.path, row) if row else self.remote.path,
+             lambda row: self._queue_send(self.local.selected_paths(), self._remote_folder(row)), connected)
+        Drag(self, self.remote, self.local, "Receive",
+             lambda row: str(self.local.path / row) if row else str(self.local.path),
+             lambda row: self._download(self.remote.selected(), self._local_folder(row)), connected)
         if DND_FILES:
             self.remote.tree.drop_target_register(DND_FILES)
             self.remote.tree.dnd_bind("<<Drop>>", self._os_drop)
@@ -107,7 +109,7 @@ class KaiDrop(_Root):
         tabs = ttk.Notebook(lower)
         tabs.pack(fill="x", pady=(0, 4))
         self.queue = ttk.Treeview(tabs, columns=("remote", "size", "status"), height=7)
-        for col, title, width in [("#0", "From this computer", 380), ("remote", "To the server", 420),
+        for col, title, width in [("#0", "From", 380), ("remote", "To", 420),
                                   ("size", "Size", 90), ("status", "Status", 140)]:
             self.queue.heading(col, text=title)
             self.queue.column(col, width=width, anchor="e" if col == "size" else "w")
@@ -187,40 +189,56 @@ class KaiDrop(_Root):
     def _send_selected(self) -> None:
         paths = self.local.selected_paths()
         if not paths:
-            self._set_status("Select files or folders on the left, then Send → (or drag them to the right).")
+            self._set_status("Select files or folders on the left, then drag them to the right (or right-click).")
             return
         self._queue_send(paths, self.remote.path)
 
-    def _drag_press(self, event: tk.Event) -> None:
-        self._drag_start = (event.x_root, event.y_root)
-        self._dragging = False
-
-    def _drag_motion(self, event: tk.Event) -> None:
-        if self._drag_start and not self._dragging:
-            dx, dy = event.x_root - self._drag_start[0], event.y_root - self._drag_start[1]
-            if abs(dx) + abs(dy) > DRAG_THRESHOLD and self.local.selected():
-                self._dragging = True
-                self.config(cursor="hand2")
-
-    def _drag_release(self, event: tk.Event) -> None:
-        dragging, self._dragging, self._drag_start = self._dragging, False, None
-        self.config(cursor="")
-        if not dragging:
-            return
-        if self.winfo_containing(event.x_root, event.y_root) is not self.remote.tree:
-            return
-        self._queue_send(self.local.selected_paths(), self._drop_folder(event.y_root))
-
-    def _drop_folder(self, y_root: int) -> str:
+    def _remote_folder(self, row: str | None) -> str:
         """Dropped on a folder row: into it; anywhere else: the folder shown."""
-        row = self.remote.row_at(y_root - self.remote.tree.winfo_rooty())
-        if row and row[1]:
-            return posixpath.join(self.remote.path, row[0])
-        return self.remote.path
+        return posixpath.join(self.remote.path, row) if row else self.remote.path
+
+    def _local_folder(self, row: str | None) -> Path:
+        return self.local.path / row if row else self.local.path
 
     def _os_drop(self, event) -> None:
         paths = [Path(p) for p in self.tk.splitlist(event.data)]
-        self._queue_send(paths, self._drop_folder(event.y_root))
+        row = self.remote.row_at(event.y_root - self.remote.tree.winfo_rooty())
+        self._queue_send(paths, self._remote_folder(row[0] if row and row[1] else None))
+
+    # --- Choosing what to receive ---
+
+    def _download_selected(self) -> None:
+        self._download(self.remote.selected(), self.local.path)
+
+    def _download(self, rows: list[tuple[str, bool]], folder: Path) -> None:
+        """Lists the chosen server files and folders (on the browsing
+        connection), then queues them to come into folder."""
+        if not self.session or not self.conn:
+            messagebox.showinfo("KaiDrop", "Connect to the server first.")
+            return
+        if not rows:
+            self._set_status("Select files or folders on the right, then drag them to the left (or right-click).")
+            return
+        sources = [(posixpath.join(self.remote.path, name), is_dir) for name, is_dir in rows]
+        self._set_status(f"Listing what to receive from {self.remote.path}…")
+        self.session.submit(lambda ftp: plan_download(ftp, sources, folder),
+                            lambda plan, f=folder: self._queue_download(plan, f),
+                            lambda m: self._set_status(f"Can't list what to receive: {m}", ERROR))
+
+    def _queue_download(self, plan: DownloadPlan, folder: Path) -> None:
+        if not plan.items or not self.conn:
+            self._set_status("Nothing to receive there (empty folders?).")
+            return
+        first = self.queue_rows
+        for item in plan.items:
+            iid = str(self.queue_rows)
+            self.queue_rows += 1
+            self.receiving_rows.add(iid)
+            self.queue.insert("", "end", iid=iid, text=item.remote,
+                              values=(str(item.local), human_size(item.size), "Waiting"))
+        self.sending = True
+        self.jobs.put(("down", self.conn, plan, first, folder))
+        self._set_status(f"Queued {len(plan.items)} files to receive ({human_size(plan.total_bytes)}).")
 
     # --- Transfers (a worker thread sends one batch after another) ---
 
@@ -240,34 +258,50 @@ class KaiDrop(_Root):
                               values=(item.remote, human_size(item.size), "Waiting"),
                               tags=("renamed",) if item.renamed else ())
         self.sending = True
-        self.jobs.put((self.conn, plan, first, folder))
+        self.jobs.put(("up", self.conn, plan, first, folder))
         self._remember()
         renamed = f", {plan.renamed_count} with plain names" if plan.renamed_count else ""
         self._set_status(f"Queued {len(plan.items)} files ({human_size(plan.total_bytes)}){renamed}.")
 
     def _transfer_worker(self) -> None:
         while True:
-            conn, plan, first, folder = self.jobs.get()
+            kind, conn, plan, first, folder = self.jobs.get()
             post: Callable = self.events.put
-            post(lambda p=plan: self._started(p))
+            receiving = kind == "down"
+            post(lambda p=plan, r=receiving: self._started(p, r))
+            progress = lambda i, item, sent, total: post(lambda r=first + i, t=total: self._progress(r, t))  # noqa: E731
+            done = lambda i, item, st, msg: post(lambda r=first + i, s=st, m=msg: self._row_done(r, s, m))  # noqa: E731
             try:
-                counts = upload(conn, plan,
-                                lambda i, item, sent, total: post(lambda r=first + i, t=total: self._progress(r, t)),
-                                lambda i, item, st, msg: post(lambda r=first + i, s=st, m=msg: self._row_done(r, s, m)),
-                                self.cancel, self._ask_from_worker)
-                post(lambda c=counts, d=folder: self._finished(c, d))
+                if receiving:
+                    counts = download(conn, plan, progress, done, self.cancel, self._ask_download_from_worker)
+                else:
+                    counts = upload(conn, plan, progress, done, self.cancel, self._ask_from_worker)
+                post(lambda c=counts, d=folder, r=receiving: self._finished(c, d, r))
             except Exception as e:  # Connection problems end this batch with a message.
                 post(lambda m=str(e): self._failed(m))
 
-    def _ask_from_worker(self, item: UploadItem, remote: RemoteFile) -> tuple[Choice, bool]:
+    def _ask(self, where: str, folder: str, existing: Side, incoming: Side) -> tuple[Choice, bool]:
         """Asks on the window's thread what to do with a file already there;
         the transfer thread waits for the answer."""
         answer: queue.Queue = queue.Queue(maxsize=1)
-        self.events.put(lambda: answer.put(ConflictDialog(self, item, remote).ask()))
+        self.events.put(lambda: answer.put(ConflictDialog(self, where, folder, existing, incoming).ask()))
         return answer.get()
 
-    def _started(self, plan) -> None:
-        self.log.add(f"Sending {len(plan.items)} files ({human_size(plan.total_bytes)})…")
+    def _ask_from_worker(self, item: UploadItem, remote: RemoteFile) -> tuple[Choice, bool]:
+        mtime = datetime.fromtimestamp(item.local.stat().st_mtime) if item.local.exists() else None
+        return self._ask("on the server", posixpath.dirname(remote.path) or "/",
+                         Side("On the server", posixpath.basename(remote.path), remote.size, remote.modified),
+                         Side("Being sent", item.local.name, item.size, mtime))
+
+    def _ask_download_from_worker(self, item: DownloadItem, here: LocalFile,
+                                  server_time: datetime | None) -> tuple[Choice, bool]:
+        return self._ask("on this computer", str(here.path.parent),
+                         Side("On this computer", here.path.name, here.size, here.modified),
+                         Side("Being received", posixpath.basename(item.remote), item.size, server_time))
+
+    def _started(self, plan, receiving: bool) -> None:
+        verb = "Receiving" if receiving else "Sending"
+        self.log.add(f"{verb} {len(plan.items)} files ({human_size(plan.total_bytes)})…")
         self.sending = True
         self.cancel.clear()
         self.cancel_button.config(state="normal")
@@ -276,13 +310,16 @@ class KaiDrop(_Root):
     def _progress(self, row: int, total: int) -> None:
         self.progress.config(value=total)
         if self.queue.exists(str(row)) and self.queue.set(str(row), "status") == "Waiting":
-            self.queue.set(str(row), "status", "Sending…")
+            self.queue.set(str(row), "status", "Receiving…" if str(row) in self.receiving_rows else "Sending…")
 
     def _row_done(self, row: int, status: Status, message: str) -> None:
         iid = str(row)
         if not self.queue.exists(iid):
             return
-        self.queue.set(iid, "status", status.value if status is not Status.FAILED else f"Failed: {message}"[:40])
+        text = status.value
+        if iid in self.receiving_rows:
+            text = {Status.SENT: "Received", Status.COPY: "Saved as a copy"}.get(status, text)
+        self.queue.set(iid, "status", text if status is not Status.FAILED else f"Failed: {message}"[:40])
         if status is Status.COPY:
             self.queue.set(iid, "remote", message)
         if status is Status.FAILED:
@@ -290,13 +327,16 @@ class KaiDrop(_Root):
             self.log.add(f"Failed: {self.queue.set(iid, 'remote')}: {message}", ERROR)
         self.queue.see(iid)
 
-    def _finished(self, counts: dict, folder: str) -> None:
+    def _finished(self, counts: dict, folder, receiving: bool = False) -> None:
         self._end_batch()
-        copies = f", {counts[Status.COPY]} sent as copies" if counts[Status.COPY] else ""
-        self._set_status(f"Done: {counts[Status.SENT]} sent{copies}, {counts[Status.SKIPPED]} skipped, "
+        verb = "received" if receiving else "sent"
+        copies = f", {counts[Status.COPY]} {verb} as copies" if counts[Status.COPY] else ""
+        self._set_status(f"Done: {counts[Status.SENT]} {verb}{copies}, {counts[Status.SKIPPED]} skipped, "
                          f"{counts[Status.FAILED]} failed, {counts[Status.CANCELLED]} cancelled.",
                          ERROR if counts[Status.FAILED] else GOOD)
-        if self.session and folder.startswith(self.remote.path):
+        if receiving:
+            self.local.refresh()  # Show what arrived.
+        elif self.session and str(folder).startswith(self.remote.path):
             self.remote.refresh(quiet=True)
 
     def _failed(self, message: str) -> None:
@@ -314,8 +354,9 @@ class KaiDrop(_Root):
 
     def _clear_finished(self) -> None:
         for iid in self.queue.get_children():
-            if self.queue.set(iid, "status") not in ("Waiting", "Sending…"):
+            if self.queue.set(iid, "status") not in ("Waiting", "Sending…", "Receiving…"):
                 self.queue.delete(iid)
+                self.receiving_rows.discard(iid)
 
     def _poll(self) -> None:
         try:

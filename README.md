@@ -3,8 +3,8 @@
 **Send music (or anything) from your computer to a Switch 2 running kaiHEN,
 over FTP — with file names the console can actually list.**
 
-> **Work in progress.** Sending works (tested with over a gigabyte of music
-> on a Switch 2). Downloading from the console is next.
+> **Work in progress.** Sending and receiving work (tested with over a
+> gigabyte of music on a Switch 2).
 
 ![KaiDrop](docs/kaidrop.png)
 
@@ -25,8 +25,9 @@ So `06 Canción.flac` uploaded with FileZilla is invisible, while
 
 ## What KaiDrop does
 
-- Sends folders and files over FTP, keeping the folder structure. It works
-  with any FTP server; on the console, use OunceShell's.
+- Sends folders and files over FTP, keeping the folder structure, and
+  receives them back from the console the same way. It works with any FTP
+  server; on the console, use OunceShell's.
 - With **Plain names for Switch 2** on (the default), it gives each copy on
   the console a name it can list:
   - accents are dropped: `Canción` → `Cancion`, `Ñandú` → `Nandu`;
@@ -73,16 +74,23 @@ by its file name, which on the console is the plain one.
    *New folder* and *Refresh*; on the right, *Open*, *New folder*, *Rename*
    (F2), *Delete* (Del) and *Refresh* (F5). With plain names on, folders
    made or renamed on the console get plain names too.
-4. Send files or folders by **dragging them from the left onto the right**
-   (onto a folder to send them into it), by dragging them from Explorer, or
-   by selecting them and pressing **Send →**. Select several as in Explorer:
+4. **Send** files or folders by **dragging them from the left onto the
+   right** (onto a folder to send them into it), by dragging them from
+   Explorer, or with **right-click → Send to the server**. **Receive** them the
+   other way: drag from the right onto the left, or **right-click → Download to
+   this computer** (into the folder shown on the left). While you drag, a label
+   by the pointer shows what you're moving and where it will land, and the
+   folder under the pointer lights up. Select several as in Explorer:
    **Ctrl+click** adds or removes one, **Shift+click** selects a range,
    **Shift+↑/↓** (and Shift+Home/End) extend the selection from the keyboard,
    and **Ctrl+A** selects everything. Dragging any of the selected files takes
    them all.
-5. The **Transfers** tab shows each file, the name it gets on the console
+5. The **Transfers** tab shows each file, where it comes from and goes
    (renamed ones in color) and how it went. **Cancel** stops the batch being
-   sent (a half-sent file is removed); **Clear finished** tidies the list.
+   moved (a half-moved file is removed); **Clear finished** tidies the list.
+   A file already where another is going (on the console when sending, on
+   your computer when receiving) asks first: skip, replace, keep both or
+   cancel.
    The **Log** tab shows what KaiDrop did and what the server said.
 6. Next to **Connect**, a dot shows the connection. If it turns red
    (*Connection lost*), start OunceShell's FTP server again and press
