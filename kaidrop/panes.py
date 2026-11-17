@@ -16,6 +16,8 @@ from .places import file_icon
 from .remote import RemoteEntry, RemoteSession, delete_tree, list_dir, parent
 
 _BAD_LOCAL = set('\\/:*?"<>|')  # Characters Windows doesn't allow in names.
+SHIFT, CONTROL = 0x0001, 0x0004   # Event.state bits.
+CLICK_SLOP = 8                    # Pixels a press may move and still be a click, not a drag.
 _images: dict[str, tk.PhotoImage] = {}
 
 # A context menu entry: a label and its command (None: shown greyed out), or None for a separator.
@@ -71,8 +73,24 @@ class FilePane(ttk.Frame):
         self.tree.bind("<BackSpace>", lambda e: self.go_up())
         self.tree.bind("<F5>", lambda e: self.refresh())
         self.tree.bind("<Button-3>", self._context_menu)
+        # Selecting several, as in Explorer: Ctrl+click and Shift+click (Tk's own),
+        # Shift+arrows, Shift+Home/End and Ctrl+A, and dragging a selection whole.
+        self.tree.bind("<ButtonPress-1>", self._press, add="+")
+        self.tree.bind("<ButtonRelease-1>", self._release, add="+")
+        self.tree.bind("<<TreeviewSelect>>", self._note_anchor, add="+")
+        self.tree.bind("<Shift-Up>", lambda e: self.extend_selection(-1))
+        self.tree.bind("<Shift-Down>", lambda e: self.extend_selection(1))
+        self.tree.bind("<Shift-Prior>", lambda e: self.extend_selection(-10))
+        self.tree.bind("<Shift-Next>", lambda e: self.extend_selection(10))
+        self.tree.bind("<Shift-Home>", lambda e: self.extend_selection(-len(self.tree.get_children())))
+        self.tree.bind("<Shift-End>", lambda e: self.extend_selection(len(self.tree.get_children())))
+        self.tree.bind("<Control-a>", lambda e: self.select_all())
+        self.tree.bind("<Control-A>", lambda e: self.select_all())
         self.menu = tk.Menu(self, tearoff=0)
         self.entries: dict[str, tuple[str, bool]] = {}  # Row id: (name, is folder).
+        self._anchor = ""      # Where a Shift selection starts.
+        self._held: tuple[tuple[str, ...], str] | None = None  # A selection kept while a press may become a drag.
+        self._press_at = (0, 0)
 
     def _list_holder(self) -> ttk.Frame:
         """Where the list goes: below the path bar, unless a side puts something there too."""
@@ -89,6 +107,56 @@ class FilePane(ttk.Frame):
             self.tree.insert("", "end", iid=iid, text=f" {name}",
                              image=self.icons["folder" if is_dir else file_icon(name)],
                              values=("" if is_dir else human_size(size),))
+
+    # --- Selecting several ---
+
+    def _press(self, event: tk.Event) -> None:
+        """A plain press on a row of a selection of several keeps them all (Tk
+        would leave just that row), so they can be dragged together; a click
+        that doesn't drag leaves just that row on release, as in Explorer."""
+        iid = self.tree.identify_row(event.y)
+        selection = self.tree.selection()
+        self._press_at = (event.x, event.y)
+        self._held = None
+        if iid and iid in selection and len(selection) > 1 and not event.state & (SHIFT | CONTROL):
+            self._held = (selection, iid)
+            self.after_idle(self._keep_held)
+
+    def _keep_held(self) -> None:
+        if self._held:
+            self.tree.selection_set(self._held[0])
+
+    def _release(self, event: tk.Event) -> None:
+        held, self._held = self._held, None
+        moved = abs(event.x - self._press_at[0]) + abs(event.y - self._press_at[1])
+        if held and moved <= CLICK_SLOP:
+            self.tree.selection_set(held[1])
+            self.tree.focus(held[1])
+            self._anchor = held[1]
+
+    def _note_anchor(self, _event: tk.Event) -> None:
+        selection = self.tree.selection()
+        if len(selection) == 1:
+            self._anchor = selection[0]
+
+    def extend_selection(self, step: int) -> str:
+        """Shift+arrow: moves the focus by step rows and selects from the anchor to it."""
+        items = self.tree.get_children()
+        if not items:
+            return "break"
+        focus = self.tree.focus() if self.tree.focus() in items else items[0]
+        anchor = self._anchor if self._anchor in items else focus
+        target = max(0, min(len(items) - 1, items.index(focus) + step))
+        low, high = sorted((items.index(anchor), target))
+        self.tree.selection_set(items[low:high + 1])
+        self.tree.focus(items[target])
+        self.tree.see(items[target])
+        self._anchor = anchor
+        return "break"
+
+    def select_all(self) -> str:
+        self.tree.selection_set(self.tree.get_children())
+        return "break"
 
     def selected(self) -> list[tuple[str, bool]]:
         return [self.entries[iid] for iid in self.tree.selection() if iid in self.entries]

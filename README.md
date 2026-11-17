@@ -75,7 +75,11 @@ by its file name, which on the console is the plain one.
    made or renamed on the console get plain names too.
 4. Send files or folders by **dragging them from the left onto the right**
    (onto a folder to send them into it), by dragging them from Explorer, or
-   by selecting them and pressing **Send →**.
+   by selecting them and pressing **Send →**. Select several as in Explorer:
+   **Ctrl+click** adds or removes one, **Shift+click** selects a range,
+   **Shift+↑/↓** (and Shift+Home/End) extend the selection from the keyboard,
+   and **Ctrl+A** selects everything. Dragging any of the selected files takes
+   them all.
 5. The **Transfers** tab shows each file, the name it gets on the console
    (renamed ones in color) and how it went. **Cancel** stops the batch being
    sent (a half-sent file is removed); **Clear finished** tidies the list.
