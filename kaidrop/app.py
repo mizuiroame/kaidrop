@@ -13,6 +13,7 @@ from tkinter import messagebox, ttk
 from typing import Callable
 
 from . import __version__, settings
+from .appicon import APP_ICONS
 from .batch import Batch, leftover
 from .conflict import ConflictDialog, Side
 from .download import DownloadItem, DownloadPlan, LocalFile, download, plan_download
@@ -42,6 +43,8 @@ class KaiDrop(_Root):
     def __init__(self) -> None:
         super().__init__()
         self.title(f"KaiDrop {__version__}")
+        self._icons = [tk.PhotoImage(data=data) for data in APP_ICONS]  # Kept: Tk drops unreferenced images.
+        self.iconphoto(True, *self._icons)
         self.geometry("1180x760")
         self.minsize(900, 600)
         self.saved = settings.load()
