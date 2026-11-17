@@ -105,6 +105,30 @@ class FtpTest(unittest.TestCase):
         finally:
             remote.KEEPALIVE_S = old
 
+    def test_lost_mid_file_leaves_no_whole_looking_file(self):
+        plan = build_plan([self.local / "Disco Ñ"], "/Music")
+        song = self.card / "Music" / "Disco N" / "01 Cancion.flac"
+        seen_while_sending = []
+
+        def progress(i, item, sent, total):
+            if item.local.name == "01 Canción.flac" and 0 < sent < item.size and not seen_while_sending:
+                seen_while_sending.append(song.exists())
+                self.server.close_all()  # OunceShell closed mid-file.
+
+        with self.assertRaises(OSError):
+            upload(self.conn, plan, progress, lambda *a: None, threading.Event())
+        self.assertEqual(seen_while_sending, [False])
+        self.assertFalse(song.exists())  # Re-sending with Skip won't keep a broken song.
+
+    def test_replace_sends_whole_file_under_the_name(self):
+        self.run_upload()
+        (self.local / "Disco Ñ" / "cover.jpg").write_bytes(b"new cover")
+        counts, _ = self.run_upload(on_conflict=lambda item, remote: (Choice.REPLACE, True))
+        album = self.card / "Music" / "Disco N"
+        self.assertEqual(counts[Status.SENT], 2)
+        self.assertEqual((album / "cover.jpg").read_bytes(), b"new cover")
+        self.assertEqual(sorted(p.name for p in album.iterdir()), ["01 Cancion.flac", "cover.jpg"])  # No .part left.
+
     def test_cancel(self):
         cancel = threading.Event()
         cancel.set()

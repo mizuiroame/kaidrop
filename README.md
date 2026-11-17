@@ -88,6 +88,9 @@ by its file name, which on the console is the plain one.
 5. The **Transfers** tab shows each file, where it comes from and goes
    (renamed ones in color) and how it went. **Cancel** stops the batch being
    moved (a half-moved file is removed); **Clear finished** tidies the list.
+   A file being moved is called `name.part` until it's complete, so if the
+   connection is lost halfway, no half file is left with the real name (a
+   leftover `.part` can be deleted, and sending again replaces it).
    A file already where another is going (on the console when sending, on
    your computer when receiving) asks first: skip, replace, keep both or
    cancel.

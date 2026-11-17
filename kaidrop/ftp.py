@@ -1,4 +1,6 @@
-"""Sends a plan to the console over FTP."""
+"""Sends a plan to the console over FTP. Files arrive as "name.part" and get
+their name when complete, so a lost connection never leaves a file that looks
+whole (and that a later "Skip" would keep)."""
 from __future__ import annotations
 
 import ftplib
@@ -12,6 +14,7 @@ from typing import Callable
 from .plan import Plan, UploadItem
 
 BLOCK_SIZE = 64 * 1024
+PART = ".part"
 
 
 class Status(Enum):
@@ -161,6 +164,7 @@ def upload(conn: Connection, plan: Plan, on_progress: ProgressFn, on_done: DoneF
                 if choice is Choice.KEEP_BOTH:
                     target = free_name(item.remote, lambda p: _remote_size(ftp, p) is not None)
                     status = Status.COPY
+            part = target + PART
             sent = 0
 
             def block(data: bytes) -> None:
@@ -173,33 +177,45 @@ def upload(conn: Connection, plan: Plan, on_progress: ProgressFn, on_done: DoneF
 
             try:
                 with item.local.open("rb") as f:
-                    ftp.storbinary(f"STOR {target}", f, BLOCK_SIZE, callback=block)
+                    ftp.storbinary(f"STOR {part}", f, BLOCK_SIZE, callback=block)
+                _settle(ftp, part, target)
                 on_done(index, item, status, target if status is Status.COPY else "")
                 counts[status] += 1
             except Cancelled:
-                # The half-sent file would look complete by name: remove it.
-                ftp = _reconnect_and_delete(conn, ftp, target)
+                ftp = _reconnect_and_delete(conn, ftp, part)
                 on_done(index, item, Status.CANCELLED, "")
                 counts[Status.CANCELLED] += 1
             except (OSError, ftplib.Error) as e:
                 on_done(index, item, Status.FAILED, str(e))
                 counts[Status.FAILED] += 1
-                ftp = _reconnect_and_delete(conn, ftp, target)
+                ftp = _reconnect_and_delete(conn, ftp, part)
     finally:
-        try:
-            ftp.quit()
-        except ftplib.all_errors:
-            ftp.close()
+        _close(ftp)
     return counts
+
+
+def _settle(ftp: ftplib.FTP, part: str, target: str) -> None:
+    """Gives the complete file its name, replacing what was there (servers
+    differ on renaming onto an existing file, so that goes first)."""
+    try:
+        ftp.delete(target)
+    except ftplib.error_perm:
+        pass  # Nothing there.
+    ftp.rename(part, target)
+
+
+def _close(ftp: ftplib.FTP) -> None:
+    try:
+        ftp.quit()
+    except (*ftplib.all_errors, AttributeError):  # AttributeError: already closed.
+        ftp.close()
 
 
 def _reconnect_and_delete(conn: Connection, ftp: ftplib.FTP, path: str) -> ftplib.FTP:
     """After an interrupted transfer the control connection may be unusable:
-    open a fresh one and remove the partial file."""
-    try:
-        ftp.close()
-    except ftplib.all_errors:
-        pass
+    open a fresh one and remove the partial file. If the server is gone this
+    raises, and the .part stays until the next send overwrites it."""
+    ftp.close()
     fresh = connect(conn)
     try:
         fresh.delete(path)
