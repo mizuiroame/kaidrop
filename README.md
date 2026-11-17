@@ -97,7 +97,9 @@ by its file name, which on the console is the plain one.
    The **Log** tab shows what KaiDrop did and what the server said.
 6. Next to **Connect**, a dot shows the connection. If it turns red
    (*Connection lost*), start OunceShell's FTP server again and press
-   **Reconnect**.
+   **Reconnect**. Files that were still to be moved show as *Stopped*;
+   after reconnecting, KaiDrop offers to continue with them (the ones
+   already moved aren't sent again).
 
 ## Download
 

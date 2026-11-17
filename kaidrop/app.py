@@ -13,6 +13,7 @@ from tkinter import messagebox, ttk
 from typing import Callable
 
 from . import __version__, settings
+from .batch import Batch, leftover
 from .conflict import ConflictDialog, Side
 from .download import DownloadItem, DownloadPlan, LocalFile, download, plan_download
 from .dragdrop import Drag
@@ -20,7 +21,7 @@ from .ftp import Choice, Connection, RemoteFile, Status, upload
 from .logview import ERROR, GOOD, INFO, LogView
 from .panes import LocalPane, RemotePane, human_size
 from .plan import UploadItem, build_plan
-from .remote import CONNECTED, CONNECTING, LOST, RemoteSession
+from .remote import CONNECTED, CONNECTING, LOST, RemoteSession, _reason
 
 try:  # Drops from Explorer or Finder, when tkinterdnd2 is installed.
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -51,6 +52,8 @@ class KaiDrop(_Root):
         self.sending = False
         self.queue_rows = 0
         self.receiving_rows: set[str] = set()  # Rows of downloads, to word their status.
+        self.ended: dict[str, Status] = {}     # How each row's transfer ended.
+        self.stopped: list[Batch] = []         # What was left when the connection went, to continue.
         self._build()
         threading.Thread(target=self._transfer_worker, daemon=True).start()
         self.after(POLL_MS, self._poll)
@@ -175,6 +178,8 @@ class KaiDrop(_Root):
         self.connect_button.config(text={LOST: "Reconnect", "": "Connect"}.get(state, "Disconnect"))
         if state == CONNECTED:
             self.log.add(message, GOOD)  # The server's welcome: the log only.
+            if self.stopped:
+                self._offer_to_continue()
         elif state == LOST:
             self._set_status(message.rstrip(". ") + ". Press Reconnect to try again.", ERROR)
         else:
@@ -229,15 +234,14 @@ class KaiDrop(_Root):
         if not plan.items or not self.conn:
             self._set_status("Nothing to receive there (empty folders?).")
             return
-        first = self.queue_rows
+        rows = []
         for item in plan.items:
-            iid = str(self.queue_rows)
-            self.queue_rows += 1
+            iid = self._new_row()
+            rows.append(iid)
             self.receiving_rows.add(iid)
             self.queue.insert("", "end", iid=iid, text=item.remote,
                               values=(str(item.local), human_size(item.size), "Waiting"))
-        self.sending = True
-        self.jobs.put(("down", self.conn, plan, first, folder))
+        self._start(Batch("down", plan, tuple(rows), folder))
         self._set_status(f"Queued {len(plan.items)} files to receive ({human_size(plan.total_bytes)}).")
 
     # --- Transfers (a worker thread sends one batch after another) ---
@@ -250,27 +254,35 @@ class KaiDrop(_Root):
         if not plan.items:
             self._set_status("Nothing to send there (empty folders?).")
             return
-        first = self.queue_rows
+        rows = []
         for item in plan.items:
-            iid = str(self.queue_rows)
-            self.queue_rows += 1
+            iid = self._new_row()
+            rows.append(iid)
             self.queue.insert("", "end", iid=iid, text=str(Path(*item.local.parts[-2:])),
                               values=(item.remote, human_size(item.size), "Waiting"),
                               tags=("renamed",) if item.renamed else ())
-        self.sending = True
-        self.jobs.put(("up", self.conn, plan, first, folder))
+        self._start(Batch("up", plan, tuple(rows), folder))
         self._remember()
         renamed = f", {plan.renamed_count} with plain names" if plan.renamed_count else ""
         self._set_status(f"Queued {len(plan.items)} files ({human_size(plan.total_bytes)}){renamed}.")
 
+    def _new_row(self) -> str:
+        iid = str(self.queue_rows)
+        self.queue_rows += 1
+        return iid
+
+    def _start(self, batch: Batch) -> None:
+        self.sending = True
+        self.jobs.put((batch, self.conn))
+
     def _transfer_worker(self) -> None:
         while True:
-            kind, conn, plan, first, folder = self.jobs.get()
+            batch, conn = self.jobs.get()
             post: Callable = self.events.put
-            receiving = kind == "down"
+            receiving, plan, rows, folder = batch.kind == "down", batch.plan, batch.rows, batch.folder
             post(lambda p=plan, r=receiving: self._started(p, r))
-            progress = lambda i, item, sent, total: post(lambda r=first + i, t=total: self._progress(r, t))  # noqa: E731
-            done = lambda i, item, st, msg: post(lambda r=first + i, s=st, m=msg: self._row_done(r, s, m))  # noqa: E731
+            progress = lambda i, item, sent, total: post(lambda r=rows[i], t=total: self._progress(r, t))  # noqa: E731
+            done = lambda i, item, st, msg: post(lambda r=rows[i], s=st, m=msg: self._row_done(r, s, m))  # noqa: E731
             try:
                 if receiving:
                     counts = download(conn, plan, progress, done, self.cancel, self._ask_download_from_worker)
@@ -278,7 +290,7 @@ class KaiDrop(_Root):
                     counts = upload(conn, plan, progress, done, self.cancel, self._ask_from_worker)
                 post(lambda c=counts, d=folder, r=receiving: self._finished(c, d, r))
             except Exception as e:  # Connection problems end this batch with a message.
-                post(lambda m=str(e): self._failed(m))
+                post(lambda b=batch, m=_reason(e): self._failed(b, m))
 
     def _ask(self, where: str, folder: str, existing: Side, incoming: Side) -> tuple[Choice, bool]:
         """Asks on the window's thread what to do with a file already there;
@@ -307,13 +319,13 @@ class KaiDrop(_Root):
         self.cancel_button.config(state="normal")
         self.progress.config(maximum=max(plan.total_bytes, 1), value=0)
 
-    def _progress(self, row: int, total: int) -> None:
+    def _progress(self, iid: str, total: int) -> None:
         self.progress.config(value=total)
-        if self.queue.exists(str(row)) and self.queue.set(str(row), "status") == "Waiting":
-            self.queue.set(str(row), "status", "Receiving…" if str(row) in self.receiving_rows else "Sending…")
+        if self.queue.exists(iid) and self.queue.set(iid, "status") == "Waiting":
+            self.queue.set(iid, "status", "Receiving…" if iid in self.receiving_rows else "Sending…")
 
-    def _row_done(self, row: int, status: Status, message: str) -> None:
-        iid = str(row)
+    def _row_done(self, iid: str, status: Status, message: str) -> None:
+        self.ended[iid] = status
         if not self.queue.exists(iid):
             return
         text = status.value
@@ -323,7 +335,7 @@ class KaiDrop(_Root):
         if status is Status.COPY:
             self.queue.set(iid, "remote", message)
         if status is Status.FAILED:
-            self.queue.item(iid, tags=("failed",))
+            self.queue.item(iid, tags=(*self.queue.item(iid, "tags"), "failed"))
             self.log.add(f"Failed: {self.queue.set(iid, 'remote')}: {message}", ERROR)
         self.queue.see(iid)
 
@@ -339,10 +351,38 @@ class KaiDrop(_Root):
         elif self.session and str(folder).startswith(self.remote.path):
             self.remote.refresh(quiet=True)
 
-    def _failed(self, message: str) -> None:
+    def _failed(self, batch: Batch, message: str) -> None:
+        """The connection went mid-batch: what's left waits for Reconnect."""
         self._end_batch()
-        self._set_status(f"Stopped: {message}", ERROR)
-        messagebox.showerror("KaiDrop", f"The transfer stopped: {message}")
+        rest = leftover(batch, self.ended)
+        if not rest:
+            self._set_status(f"Stopped: {message}", ERROR)
+            return
+        first_stop = not self.stopped
+        self.stopped.append(rest)
+        for iid in rest.rows:
+            if self.queue.exists(iid):
+                self.queue.set(iid, "status", "Stopped")
+        left = sum(len(b.rows) for b in self.stopped)
+        self._set_status(f"Stopped: {message}. {left} files left: they can continue after Reconnect.", ERROR)
+        if first_stop:  # Batches queued behind it stop too: one message is enough.
+            messagebox.showerror("KaiDrop", f"The transfer stopped: {message}\n\n"
+                                 "Start the server again and press Reconnect to continue with the files left.")
+
+    def _offer_to_continue(self) -> None:
+        batches, self.stopped = self.stopped, []
+        left = sum(len(b.rows) for b in batches)
+        if not messagebox.askyesno("KaiDrop", f"{left} files were left when the connection was lost. "
+                                   "Continue with them now?"):
+            self._set_status(f"{left} files left as they were.")
+            return
+        for batch in batches:
+            for iid in batch.rows:
+                if self.queue.exists(iid):
+                    self.queue.set(iid, "status", "Waiting")
+                    self.queue.item(iid, tags=tuple(t for t in self.queue.item(iid, "tags") if t != "failed"))
+            self._start(batch)
+        self._set_status(f"Continuing with {left} files.")
 
     def _end_batch(self) -> None:
         self.sending = not self.jobs.empty()
@@ -354,9 +394,10 @@ class KaiDrop(_Root):
 
     def _clear_finished(self) -> None:
         for iid in self.queue.get_children():
-            if self.queue.set(iid, "status") not in ("Waiting", "Sending…", "Receiving…"):
+            if self.queue.set(iid, "status") not in ("Waiting", "Sending…", "Receiving…", "Stopped"):
                 self.queue.delete(iid)
                 self.receiving_rows.discard(iid)
+                self.ended.pop(iid, None)
 
     def _poll(self) -> None:
         try:

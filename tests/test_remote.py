@@ -32,5 +32,16 @@ class ListParsingTest(unittest.TestCase):
         self.assertEqual(parent("/"), "/")
 
 
+class ReasonTest(unittest.TestCase):
+    def test_connection_errors_in_words(self):
+        from kaidrop.remote import _reason
+
+        self.assertIn("isn't running", _reason(ConnectionRefusedError(10061, "No se puede establecer")))
+        self.assertIn("didn't answer", _reason(TimeoutError("timed out")))
+        self.assertEqual(_reason(ConnectionResetError(10054, "x")), "the connection was cut")
+        self.assertEqual(_reason(EOFError()), "the server closed the connection")
+        self.assertEqual(_reason(OSError("550 No such file")), "550 No such file")
+
+
 if __name__ == "__main__":
     unittest.main()

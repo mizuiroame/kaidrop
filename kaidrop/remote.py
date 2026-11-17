@@ -172,6 +172,13 @@ class RemoteSession:
 
 
 def _reason(e: BaseException) -> str:
+    """Why the connection failed, in words (not Windows' "WinError 10061…")."""
+    if isinstance(e, ConnectionRefusedError):
+        return "the server isn't running (is the FTP server on?)"
+    if isinstance(e, TimeoutError):
+        return "the server didn't answer (is the console awake and on the same network?)"
+    if isinstance(e, (ConnectionResetError, ConnectionAbortedError)):
+        return "the connection was cut"
     text = str(e).strip()
     if isinstance(e, EOFError) or not text:
         return "the server closed the connection" if isinstance(e, EOFError) else type(e).__name__
