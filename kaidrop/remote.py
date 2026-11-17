@@ -81,6 +81,11 @@ KEEPALIVE_S = 20  # Idle this long, the session checks that the server is still 
 StateFn = Callable[[str, str], None]  # state, message
 
 
+@dataclass(frozen=True)
+class _Lost:
+    message: str
+
+
 class RemoteSession:
     """One connection, used by one worker thread. Jobs run in order; their
     results come back through `post`, which must hand them to the window's
@@ -106,6 +111,12 @@ class RemoteSession:
     def close(self) -> None:
         self._jobs.put(None)
 
+    def mark_lost(self, message: str) -> None:
+        """Another connection to the same server (a transfer's) found it gone:
+        drop this one too and report it lost, without waiting for the
+        keepalive. The next job connects again."""
+        self._jobs.put(_Lost(message))
+
     def _state(self, state: str, message: str) -> None:
         if self._on_state:
             self._post(lambda f=self._on_state: f(state, message))
@@ -130,6 +141,10 @@ class RemoteSession:
                 continue
             if item is None:
                 break
+            if isinstance(item, _Lost):
+                self._drop()
+                self._state(LOST, item.message)
+                continue
             job, on_result, on_error = item
             try:
                 result = self._attempt(job)

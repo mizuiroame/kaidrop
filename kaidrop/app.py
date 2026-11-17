@@ -383,7 +383,12 @@ class KaiDrop(_Root):
             if self.queue.exists(iid):
                 self.queue.set(iid, "status", "Stopped")
         left = sum(len(b.rows) for b in self.stopped)
-        self._set_status(f"Stopped: {message}. {left} files left: they can continue after Reconnect.", ERROR)
+        if self.session and self.link_state != LOST:
+            # Browsing uses its own connection, which would only notice at its next keepalive:
+            # show the connection lost now, with Reconnect.
+            self.session.mark_lost(f"The transfer stopped: {message}; {left} files left")
+        else:
+            self._set_status(f"Stopped: {message}. {left} files left: they can continue after Reconnect.", ERROR)
         if first_stop:  # Batches queued behind it stop too: one message is enough.
             messagebox.showerror("KaiDrop", f"The transfer stopped: {message}\n\n"
                                  "Start the server again and press Reconnect to continue with the files left.")

@@ -129,6 +129,23 @@ class FtpTest(unittest.TestCase):
         self.assertEqual((album / "cover.jpg").read_bytes(), b"new cover")
         self.assertEqual(sorted(p.name for p in album.iterdir()), ["01 Cancion.flac", "cover.jpg"])  # No .part left.
 
+    def test_told_the_connection_is_lost(self):
+        import queue as q
+
+        from kaidrop import remote
+
+        states = q.Queue()
+        session = remote.RemoteSession(self.conn, lambda fn: fn(), lambda s, m: states.put((s, m)))
+        session.submit(lambda ftp: ftp.pwd(), lambda r: None, lambda m: None)
+        self.assertEqual([states.get(timeout=5)[0], states.get(timeout=5)[0]], [remote.CONNECTING, remote.CONNECTED])
+        session.mark_lost("The transfer stopped: the connection was cut")  # Seen by the transfer, not by browsing.
+        self.assertEqual(states.get(timeout=5), (remote.LOST, "The transfer stopped: the connection was cut"))
+        results = q.Queue()
+        session.submit(lambda ftp: ftp.pwd(), results.put, results.put)  # The next job connects again.
+        self.assertEqual(results.get(timeout=5), "/")
+        self.assertEqual(states.get(timeout=5)[0], remote.CONNECTING)
+        session.close()
+
     def test_cancel(self):
         cancel = threading.Event()
         cancel.set()
