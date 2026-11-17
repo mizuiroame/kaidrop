@@ -48,7 +48,10 @@ So `06 Canción.flac` uploaded with FileZilla is invisible, while
   ![When a file is already there](docs/conflict.png)
 
 - Shows whether it's connected, notices when the server goes away (OunceShell
-  closed, the console asleep) and offers **Reconnect**. The **Log** tab lists
+  closed, the console asleep) and offers **Reconnect**, then continues with
+  the files left. A file only gets its name on arrival once it's complete,
+  so a lost connection never leaves a half song that looks whole. While
+  moving files it shows the speed and the time left. The **Log** tab lists
   what happened, with the time, like FileZilla's message log.
 - Remembers the console's address and the destination folder.
 
@@ -127,12 +130,21 @@ powershell -File build.ps1                         # builds dist/KaiDrop.exe
 | File | What it does |
 |------|--------------|
 | `kaidrop/names.py` | The plain names for the console |
-| `kaidrop/plan.py` | What goes where: the files and their names on the console |
-| `kaidrop/ftp.py` | The upload: folders, skipping, progress, cancel |
-| `kaidrop/app.py` | The window: connection, the two panes, drag and drop, transfers |
-| `kaidrop/panes.py` | The file panes: this computer and the server |
+| `kaidrop/plan.py` | What to send where: the files and their names on the console |
+| `kaidrop/ftp.py` | Sending: folders, files already there, `.part` until complete, cancel |
+| `kaidrop/download.py` | Receiving: what comes where, names Windows allows, `.part` until complete |
+| `kaidrop/batch.py` | A batch in the queue, and what's left of it to continue after Reconnect |
+| `kaidrop/rate.py` | The speed and time left |
+| `kaidrop/app.py` | The window: connection, the two panes, transfers, log |
+| `kaidrop/panes.py` | The file panes: this computer and the server, right-click menus, selection |
+| `kaidrop/foldertree.py` | This computer's folder tree, like Explorer's |
+| `kaidrop/places.py` | Where the tree starts: Desktop, Documents… and the drives, by name |
+| `kaidrop/dragdrop.py` | Dragging between the panes, with a label by the pointer |
+| `kaidrop/conflict.py` | The window for a file already where another is going |
 | `kaidrop/remote.py` | Browsing the server: listings (MLSD or LIST), deleting, its own thread |
-| `kaidrop/settings.py` | Remembers the address and folder (never the password) |
+| `kaidrop/logview.py` | The Log tab |
+| `kaidrop/icons.py` | The file panes' icons |
+| `kaidrop/settings.py` | Remembers the address and folders (never the password) |
 
 ## Legal notice
 
