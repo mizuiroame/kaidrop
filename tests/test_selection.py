@@ -95,10 +95,71 @@ class SelectionTest(unittest.TestCase):
         self.drag("1", {12: "1"}, 12)
         self.assertEqual(self.tree.selection(), ("1",))
 
-    def test_dragging_a_selected_row_moves_files_instead(self):
+    def test_dragging_up_or_down_from_a_selected_row_selects_too(self):
         self.tree.selection_set(("1", "2"))
-        self.press("2")
-        self.assertIsNone(self.pane._band_motion(SimpleNamespace(x=10, y=80, state=0)))
+        self.drag("2", {80: "4"}, 80)
+        self.assertEqual(self.tree.selection(), ("2", "3", "4"))
+
+    def test_a_selection_of_several_stays_until_another_row_is_reached(self):
+        self.tree.selection_set(("1", "3", "5"))
+        self.drag("3", {20: "3"}, 20)  # Still on its own row: the three stay, to be dragged out.
+        self.assertEqual(self.tree.selection(), ("1", "3", "5"))
+
+    def test_leaving_the_list_sideways_hands_over_to_dragging_files(self):
+        self.tree.selection_set(("1", "3", "5"))
+        self.press("3")
+        self.tree.identify_row = lambda _y: "3"
+        self.assertIsNone(self.pane._band_motion(SimpleNamespace(x=-30, y=10, state=0)))
+        self.assertIsNone(self.pane._band_motion(SimpleNamespace(x=-60, y=80, state=0)))
+        self.assertEqual(self.tree.selection(), ("1", "3", "5"))  # All three go.
+
+
+@unittest.skipIf(_root is None, "no display")
+class HandOverTest(unittest.TestCase):
+    """Up and down in a list selects; out of it sideways, the selection is
+    dragged to the other pane and dropped there."""
+
+    def setUp(self):
+        from kaidrop.dragdrop import Drag, Target
+
+        self.source, self.target = FilePane(_root, "Here"), FilePane(_root, "There")
+        self.source.show([(f"file {i}", False, 1) for i in range(5)])
+        self.target.show([("Folder", True, 0)])
+        self.addCleanup(self.source.destroy)
+        self.addCleanup(self.target.destroy)
+        self.dropped = []
+        self.drag = Drag(_root, self.source, [Target(self.target, "Send", lambda row: row or "/",
+                                                     lambda row: self.dropped.append((self.source.selected(), row)))])
+        self.drag._make_ghost = lambda: None  # No window needed for this.
+        self.under = self.source.tree
+        _root.winfo_containing = lambda x, y: self.under
+
+    def tearDown(self):
+        del _root.winfo_containing
+
+    def event(self, x, y):
+        return SimpleNamespace(x=x, y=y, x_root=x, y_root=y, state=0)
+
+    def test_select_down_then_out_drops_the_selection(self):
+        tree = self.source.tree
+        tree.identify_row = lambda y: {10: "1", 40: "3"}.get(y, "")
+        press = self.event(10, 10)
+        self.source._press(press)
+        self.drag._press(press)
+        tree.selection_set("1")
+        for e in (self.event(10, 40),):  # Down to file 3: selects 1-3; the drag waits.
+            if self.source._band_motion(e) != "break":
+                self.drag._motion(e)
+        self.assertFalse(self.drag.dragging)
+        self.assertEqual(tree.selection(), ("1", "2", "3"))
+        out = self.event(-40, 40)  # Out sideways, over the other pane.
+        self.under = self.target.tree
+        self.target.tree.identify_row = lambda y: ""
+        self.assertIsNone(self.source._band_motion(out))
+        self.drag._motion(out)
+        self.assertTrue(self.drag.dragging)
+        self.drag._release(out)
+        self.assertEqual(self.dropped, [([("file 1", False), ("file 2", False), ("file 3", False)], None)])
 
 
 if __name__ == "__main__":

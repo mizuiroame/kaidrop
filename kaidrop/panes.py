@@ -5,6 +5,7 @@ import os
 import posixpath
 import sys
 import tkinter as tk
+from dataclasses import dataclass
 from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
 from typing import Callable
@@ -19,6 +20,7 @@ from .serverops import Item, copy_items, move_items
 _BAD_LOCAL = set('\\/:*?"<>|')  # Characters Windows doesn't allow in names.
 SHIFT, CONTROL = 0x0001, 0x0004   # Event.state bits.
 CLICK_SLOP = 8                    # Pixels a press may move and still be a click, not a drag.
+AUTOSCROLL_MS = 60                # How often the list scrolls while a drag is past its edge.
 _images: dict[str, tk.PhotoImage] = {}
 
 # A context menu entry: a label and its command (None: shown greyed out), or None for a separator.
@@ -38,6 +40,18 @@ def human_size(n: float) -> str:
             return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
         n /= 1024
     return f"{n} B"
+
+
+@dataclass
+class _Band:
+    """A selection by dragging: the row it began on, the rows kept (Ctrl),
+    and how it's going."""
+    start: str
+    base: tuple[str, ...]
+    moved: bool = False    # Past the click slop.
+    spanned: bool = False  # Has reached another row: the range is the selection.
+    out: bool = False      # Left the list sideways: now a drag of files.
+    last_y: int = 0
 
 
 class FilePane(ttk.Frame):
@@ -94,7 +108,8 @@ class FilePane(ttk.Frame):
         self._anchor = ""      # Where a Shift selection starts.
         self._held: tuple[tuple[str, ...], str] | None = None  # A selection kept while a press may become a drag.
         self._press_at = (0, 0)
-        self._band: tuple[str, tuple[str, ...], bool] | None = None  # Selecting by dragging: from, kept, moved.
+        self._band: _Band | None = None      # Selecting by dragging.
+        self._scroll_job: str | None = None  # Scrolling while the pointer is past an edge.
 
     def _list_holder(self) -> ttk.Frame:
         """Where the list goes: below the path bar, unless a side puts something there too."""
@@ -115,64 +130,103 @@ class FilePane(ttk.Frame):
     # --- Selecting several ---
 
     def _press(self, event: tk.Event) -> None:
-        """A plain press on a row of a selection of several keeps them all (Tk
-        would leave just that row), so they can be dragged together; a click
-        that doesn't drag leaves just that row on release, as in Explorer.
-
-        A press on a row that isn't selected, or on the empty space under the
-        rows, starts a selection by dragging instead: the rows the pointer
-        goes over (added to the others with Ctrl)."""
+        """Pressing in the list starts a selection by dragging: up and down,
+        the rows the pointer goes over are selected (added to the others with
+        Ctrl), even from a row already selected. Leaving the list sideways
+        turns it into a drag of the selected files to the other side
+        (dragdrop.Drag). A plain press on a row of a selection of several
+        keeps them all (Tk would leave just that row) until the pointer
+        reaches another row, so they can be dragged out together; a click
+        that doesn't drag leaves just that row on release, as in Explorer."""
         iid = self.tree.identify_row(event.y)
         selection = self.tree.selection()
         self._press_at = (event.x, event.y)
         self._held = None
         self._band = None
-        if iid and iid in selection and len(selection) > 1 and not event.state & (SHIFT | CONTROL):
+        self._stop_scrolling()
+        if (self.tree.identify_region(event.x, event.y) == "heading" or event.state & SHIFT
+                or not self.tree.get_children()):
+            return
+        if iid and iid in selection and len(selection) > 1 and not event.state & CONTROL:
             self._held = (selection, iid)
             self.after_idle(self._keep_held)
-        elif (not iid or iid not in selection) and not event.state & SHIFT and self.tree.get_children():
-            base = selection if event.state & CONTROL else ()
-            self._band = (iid or self._row_near(event.y), base, False)
+        base = selection if event.state & CONTROL else ()
+        self._band = _Band(iid or self._row_near(event.y), base)
 
     def _keep_held(self) -> None:
         if self._held:
             self.tree.selection_set(self._held[0])
 
     def _row_near(self, y: int) -> str:
-        """The row at y, or the first or last one when y is above or below them."""
-        items = self.tree.get_children()
+        """The row at y, or the first or last row in view when y is above or below them."""
         iid = self.tree.identify_row(y)
         if iid:
             return iid
-        first_y = self.tree.bbox(items[0])
-        return items[0] if first_y and y < first_y[1] else items[-1]
+        height = self.tree.winfo_height()
+        rows = range(0, height, 4) if y < height // 2 else range(height - 1, -1, -4)
+        for row_y in rows:
+            iid = self.tree.identify_row(row_y)
+            if iid:
+                return iid
+        items = self.tree.get_children()
+        return items[0] if y < height // 2 else items[-1]
+
+    def _height(self, y: int) -> int:
+        """The list's height (a stand-in when it isn't on screen: the tests)."""
+        return self.tree.winfo_height() if self.tree.winfo_ismapped() else y + 1
 
     def _band_motion(self, event: tk.Event) -> str | None:
         """Selects from where the drag began to the row under the pointer,
-        scrolling when it goes past the list's top or bottom."""
-        if not self._band:
+        scrolling while it's past the list's top or bottom."""
+        band = self._band
+        if not band or band.out:
+            return None  # A drag of files: dragdrop.Drag carries it.
+        width = self.tree.winfo_width() if self.tree.winfo_ismapped() else event.x + 1
+        if event.x < 0 or event.x >= width:
+            band.out = True  # Out sideways: the selection goes to the other side.
+            self._stop_scrolling()
             return None
-        start, base, moving = self._band
-        if not moving:
+        if not band.moved:
             if abs(event.x - self._press_at[0]) + abs(event.y - self._press_at[1]) <= CLICK_SLOP:
                 return "break"
-            self._band = (start, base, True)
-        height = self.tree.winfo_height() if self.tree.winfo_ismapped() else event.y + 1
-        if event.y < 0:
-            self.tree.yview_scroll(-1, "units")
-        elif event.y >= height:
-            self.tree.yview_scroll(1, "units")
+            band.moved = True
+        band.last_y = event.y
+        self._band_select(event.y)
+        if (event.y < 0 or event.y >= self._height(event.y)) and self._scroll_job is None:
+            self._auto_scroll()
+        return "break"
+
+    def _band_select(self, y: int) -> None:
+        band = self._band
         items = self.tree.get_children()
-        here = self._row_near(max(0, min(event.y, height - 1)))
-        low, high = sorted((items.index(start), items.index(here)))
-        rows = items[low:high + 1]
-        self.tree.selection_set(tuple(dict.fromkeys(base + rows)))
+        here = self._row_near(max(0, min(y, self._height(y) - 1)))
+        if here == band.start and not band.spanned:
+            return  # Still on the row it began on: the selection stays as it was.
+        band.spanned = True
+        self._held = None  # Released, it's this selection that stays.
+        low, high = sorted((items.index(band.start), items.index(here)))
+        self.tree.selection_set(tuple(dict.fromkeys(band.base + items[low:high + 1])))
         self.tree.focus(here)
-        self._anchor = start
-        return "break"  # Not a drag of files to the other side.
+        self._anchor = band.start
+
+    def _auto_scroll(self) -> None:
+        """While the pointer stays past the top or bottom, the list keeps scrolling."""
+        self._scroll_job = None
+        band = self._band
+        if not band or band.out or 0 <= band.last_y < self._height(band.last_y):
+            return
+        self.tree.yview_scroll(-1 if band.last_y < 0 else 1, "units")
+        self._band_select(band.last_y)
+        self._scroll_job = self.after(AUTOSCROLL_MS, self._auto_scroll)
+
+    def _stop_scrolling(self) -> None:
+        if self._scroll_job is not None:
+            self.after_cancel(self._scroll_job)
+            self._scroll_job = None
 
     def _release(self, event: tk.Event) -> None:
         self._band = None
+        self._stop_scrolling()
         held, self._held = self._held, None
         moved = abs(event.x - self._press_at[0]) + abs(event.y - self._press_at[1])
         if held and moved <= CLICK_SLOP:

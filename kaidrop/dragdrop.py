@@ -1,5 +1,6 @@
-"""Dragging the selected files of one pane onto the other, or onto a folder
-of the same pane (moving them on the server). While dragging, a small label
+"""Dragging the selected files of one pane onto the other, or back onto a
+folder of the same pane (moving them on the server). It starts when the
+pointer leaves the list: inside it, dragging selects (panes.FilePane). While dragging, a small label
 follows the pointer with what's being moved and where it would land, and the
 folder under the pointer lights up."""
 from __future__ import annotations
@@ -122,6 +123,8 @@ class Drag:
             moved = abs(event.x_root - self._start[0]) + abs(event.y_root - self._start[1])
             if moved <= THRESHOLD or not self.source.selected():
                 return
+            if self.root.winfo_containing(event.x_root, event.y_root) is self.source.tree:
+                return  # Up and down in its own list selects (panes.FilePane); out of it, files go.
             self.dragging = True
             self._make_ghost()
             self.root.config(cursor="hand2")

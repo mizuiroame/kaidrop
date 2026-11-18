@@ -89,11 +89,12 @@ by its file name, which on the console is the plain one.
    other way: drag from the right onto the left, or **right-click → Download to
    this computer** (into the folder shown on the left). While you drag, a label
    by the pointer shows what you're moving and where it will land, and the
-   folder under the pointer lights up. On the right, dragging onto one of its
-   own folders moves the files there. Select several as in Explorer:
-   **drag** from a file that isn't selected (or from the empty space under
-   the files) to select the ones you go over (with **Ctrl** they're added to
-   the others), **Ctrl+click** adds or removes one, **Shift+click** selects a range,
+   folder under the pointer lights up. Dragging **up or down inside a list
+   selects** the files and folders you go over (with **Ctrl** they're added
+   to the others; past the top or bottom the list scrolls); the selection
+   is **moved once the pointer leaves the list** toward the other side
+   (brought back over one of the server's own folders, it moves there).
+   Select several as in Explorer too: **Ctrl+click** adds or removes one, **Shift+click** selects a range,
    **Shift+↑/↓** (and Shift+Home/End) extend the selection from the keyboard,
    and **Ctrl+A** selects everything. Dragging any of the selected files takes
    them all.
