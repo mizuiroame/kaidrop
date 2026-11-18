@@ -52,6 +52,7 @@ class _Band:
     spanned: bool = False  # Has reached another row: the range is the selection.
     out: bool = False      # Left the list sideways: now a drag of files.
     last_y: int = 0
+    from_empty: bool = False  # Began on the empty space: rows count once the pointer is on them.
 
 
 class FilePane(ttk.Frame):
@@ -83,7 +84,7 @@ class FilePane(ttk.Frame):
         self.tree.configure(yscrollcommand=scroll.set)
         self.tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
-        self.tree.bind("<Double-1>", lambda e: self._open_selected())
+        self.tree.bind("<Double-1>", self._double_click)
         self.tree.bind("<Return>", lambda e: self._open_selected())
         self.tree.bind("<BackSpace>", lambda e: self.go_up())
         self.tree.bind("<F5>", lambda e: self.refresh())
@@ -151,25 +152,37 @@ class FilePane(ttk.Frame):
             self._held = (selection, iid)
             self.after_idle(self._keep_held)
         base = selection if event.state & CONTROL else ()
-        self._band = _Band(iid or self._row_near(event.y), base)
+        if not iid and not event.state & CONTROL:
+            self.tree.selection_set(())  # A press on the empty space: nothing selected, as in Explorer.
+            base = ()
+        self._band = _Band(iid or self._row_near(event.y), base, from_empty=not iid)
 
     def _keep_held(self) -> None:
         if self._held:
             self.tree.selection_set(self._held[0])
 
-    def _row_near(self, y: int) -> str:
-        """The row at y, or the first or last row in view when y is above or below them."""
-        iid = self.tree.identify_row(y)
-        if iid:
-            return iid
+    def _visible_row(self, from_top: bool) -> str:
+        """The first (or last) row in view."""
         height = self.tree.winfo_height()
-        rows = range(0, height, 4) if y < height // 2 else range(height - 1, -1, -4)
-        for row_y in rows:
+        for row_y in range(0, height, 4) if from_top else range(height - 1, -1, -4):
             iid = self.tree.identify_row(row_y)
             if iid:
                 return iid
         items = self.tree.get_children()
-        return items[0] if y < height // 2 else items[-1]
+        return items[0] if from_top else items[-1]
+
+    def _row_near(self, y: int) -> str:
+        """The row at y; below the rows (the empty space under a short list,
+        or past the bottom) the last one in view, above them (the heading, or
+        past the top) the first one in view."""
+        iid = self.tree.identify_row(y)
+        if iid:
+            return iid
+        last = self._visible_row(from_top=False)
+        box = self.tree.bbox(last)
+        if box and y >= box[1] + box[3]:
+            return last
+        return self._visible_row(from_top=True)
 
     def _height(self, y: int) -> int:
         """The list's height (a stand-in when it isn't on screen: the tests)."""
@@ -199,8 +212,11 @@ class FilePane(ttk.Frame):
     def _band_select(self, y: int) -> None:
         band = self._band
         items = self.tree.get_children()
-        here = self._row_near(max(0, min(y, self._height(y) - 1)))
-        if here == band.start and not band.spanned:
+        inside = max(0, min(y, self._height(y) - 1))
+        here = self._row_near(inside)
+        if band.from_empty and not band.spanned and not self.tree.identify_row(inside):
+            return  # Still on the empty space: nothing more selected yet.
+        if here == band.start and not band.spanned and not band.from_empty:
             return  # Still on the row it began on: the selection stays as it was.
         band.spanned = True
         self._held = None  # Released, it's this selection that stays.
@@ -264,6 +280,16 @@ class FilePane(ttk.Frame):
     def row_at(self, y: int) -> tuple[str, bool] | None:
         iid = self.tree.identify_row(y)
         return self.entries.get(iid)
+
+    def _double_click(self, event: tk.Event) -> str:
+        """Opens the folder double-clicked; on the empty space or the heading, nothing (as in Explorer)."""
+        iid = self.tree.identify_row(event.y)
+        entry = self.entries.get(iid)
+        if entry and entry[1]:
+            self.open_child(entry[0])
+        elif not iid and self.tree.identify_region(event.x, event.y) != "heading":
+            self.tree.selection_set(())  # A quick second click on the empty space is still a click there.
+        return "break"
 
     def _open_selected(self) -> None:
         sel = self.selected()
