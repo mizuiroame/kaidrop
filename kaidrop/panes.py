@@ -14,6 +14,7 @@ from .icons import ICONS
 from .names import ascii_name, folder_name, is_plain
 from .places import file_icon
 from .remote import RemoteEntry, RemoteSession, delete_tree, list_dir, parent
+from .serverops import Item, copy_items, move_items
 
 _BAD_LOCAL = set('\\/:*?"<>|')  # Characters Windows doesn't allow in names.
 SHIFT, CONTROL = 0x0001, 0x0004   # Event.state bits.
@@ -76,6 +77,8 @@ class FilePane(ttk.Frame):
         # Selecting several, as in Explorer: Ctrl+click and Shift+click (Tk's own),
         # Shift+arrows, Shift+Home/End and Ctrl+A, and dragging a selection whole.
         self.tree.bind("<ButtonPress-1>", self._press, add="+")
+        # Bound before dragdrop.Drag's: a drag that selects stops here.
+        self.tree.bind("<B1-Motion>", self._band_motion, add="+")
         self.tree.bind("<ButtonRelease-1>", self._release, add="+")
         self.tree.bind("<<TreeviewSelect>>", self._note_anchor, add="+")
         self.tree.bind("<Shift-Up>", lambda e: self.extend_selection(-1))
@@ -91,6 +94,7 @@ class FilePane(ttk.Frame):
         self._anchor = ""      # Where a Shift selection starts.
         self._held: tuple[tuple[str, ...], str] | None = None  # A selection kept while a press may become a drag.
         self._press_at = (0, 0)
+        self._band: tuple[str, tuple[str, ...], bool] | None = None  # Selecting by dragging: from, kept, moved.
 
     def _list_holder(self) -> ttk.Frame:
         """Where the list goes: below the path bar, unless a side puts something there too."""
@@ -113,20 +117,62 @@ class FilePane(ttk.Frame):
     def _press(self, event: tk.Event) -> None:
         """A plain press on a row of a selection of several keeps them all (Tk
         would leave just that row), so they can be dragged together; a click
-        that doesn't drag leaves just that row on release, as in Explorer."""
+        that doesn't drag leaves just that row on release, as in Explorer.
+
+        A press on a row that isn't selected, or on the empty space under the
+        rows, starts a selection by dragging instead: the rows the pointer
+        goes over (added to the others with Ctrl)."""
         iid = self.tree.identify_row(event.y)
         selection = self.tree.selection()
         self._press_at = (event.x, event.y)
         self._held = None
+        self._band = None
         if iid and iid in selection and len(selection) > 1 and not event.state & (SHIFT | CONTROL):
             self._held = (selection, iid)
             self.after_idle(self._keep_held)
+        elif (not iid or iid not in selection) and not event.state & SHIFT and self.tree.get_children():
+            base = selection if event.state & CONTROL else ()
+            self._band = (iid or self._row_near(event.y), base, False)
 
     def _keep_held(self) -> None:
         if self._held:
             self.tree.selection_set(self._held[0])
 
+    def _row_near(self, y: int) -> str:
+        """The row at y, or the first or last one when y is above or below them."""
+        items = self.tree.get_children()
+        iid = self.tree.identify_row(y)
+        if iid:
+            return iid
+        first_y = self.tree.bbox(items[0])
+        return items[0] if first_y and y < first_y[1] else items[-1]
+
+    def _band_motion(self, event: tk.Event) -> str | None:
+        """Selects from where the drag began to the row under the pointer,
+        scrolling when it goes past the list's top or bottom."""
+        if not self._band:
+            return None
+        start, base, moving = self._band
+        if not moving:
+            if abs(event.x - self._press_at[0]) + abs(event.y - self._press_at[1]) <= CLICK_SLOP:
+                return "break"
+            self._band = (start, base, True)
+        height = self.tree.winfo_height() if self.tree.winfo_ismapped() else event.y + 1
+        if event.y < 0:
+            self.tree.yview_scroll(-1, "units")
+        elif event.y >= height:
+            self.tree.yview_scroll(1, "units")
+        items = self.tree.get_children()
+        here = self._row_near(max(0, min(event.y, height - 1)))
+        low, high = sorted((items.index(start), items.index(here)))
+        rows = items[low:high + 1]
+        self.tree.selection_set(tuple(dict.fromkeys(base + rows)))
+        self.tree.focus(here)
+        self._anchor = start
+        return "break"  # Not a drag of files to the other side.
+
     def _release(self, event: tk.Event) -> None:
+        self._band = None
         held, self._held = self._held, None
         moved = abs(event.x - self._press_at[0]) + abs(event.y - self._press_at[1])
         if held and moved <= CLICK_SLOP:
@@ -310,6 +356,10 @@ class RemotePane(FilePane):
         ttk.Button(self.tools, text="Delete", command=self._delete).pack(side="left", padx=(4, 0))
         self.tree.bind("<Delete>", lambda e: self._delete())
         self.tree.bind("<F2>", lambda e: self._rename())
+        for key, command in (("x", self._cut), ("c", self._copy), ("v", self.paste)):
+            self.tree.bind(f"<Control-{key}>", lambda e, c=command: c())
+            self.tree.bind(f"<Control-{key.upper()}>", lambda e, c=command: c())
+        self.clipboard: tuple[str, list[Item]] | None = None  # "cut" or "copy", and what.
         self.session: RemoteSession | None = None
         self.path = start or "/"
         self.path_var.set(self.path)
@@ -360,8 +410,14 @@ class RemotePane(FilePane):
             return [("Connect to the server first", None)]
         sel = self.selected()
         folder = self._single_folder()
+        into = f"Paste into “{folder}”" if folder else "Paste"
         return [("Download to this computer", self.on_download if sel else None),
                 ("Open", (lambda: self.open_child(folder)) if folder else None),
+                None,
+                ("Cut", self._cut if sel else None),
+                ("Copy", self._copy if sel else None),
+                (into, (lambda: self.paste(posixpath.join(self.path, folder) if folder else None))
+                 if self.clipboard else None),
                 None,
                 ("New folder", self._new_folder),
                 ("Rename", self._rename if len(sel) == 1 else None),
@@ -408,6 +464,65 @@ class RemotePane(FilePane):
         target = posixpath.join(self.path, self._console_name(name, is_dir))
         self.session.submit(lambda ftp: ftp.rename(source, target), lambda _: self.refresh(quiet=True),
                             lambda m: messagebox.showerror("KaiDrop", f"Can't rename {source}:\n{m}"))
+
+    # --- Cut, copy and paste, and moving by dragging ---
+
+    def _selected_items(self) -> list[Item]:
+        return [(posixpath.join(self.path, name), is_dir) for name, is_dir in self.selected()]
+
+    def _clip(self, mode: str) -> None:
+        items = self._selected_items()
+        if not self.session or not items:
+            return
+        self.clipboard = (mode, items)
+        what = f"“{posixpath.basename(items[0][0])}”" if len(items) == 1 else f"{len(items)} items"
+        verb = "Cut" if mode == "cut" else "Copied"
+        self.on_status(f"{verb} {what}: open another folder and Paste (Ctrl+V).")
+
+    def _cut(self) -> None:
+        self._clip("cut")
+
+    def _copy(self) -> None:
+        self._clip("copy")
+
+    def paste(self, folder: str | None = None) -> None:
+        """Pastes what was cut or copied into folder (or the one shown)."""
+        if not self.session or not self.clipboard:
+            return
+        mode, items = self.clipboard
+        target = folder or self.path
+        if mode == "cut":
+            self.clipboard = None  # Moved once; a second Paste would find nothing.
+            self.move_into(items, target)
+            return
+        if not messagebox.askyesno("KaiDrop", "FTP can't copy on the server itself: KaiDrop downloads each file "
+                                              "and sends it back. Big videos take as long as sending them.\n\n"
+                                              f"Copy into {target}?"):
+            return
+        session, status = self.session, self.on_status
+
+        def step(message: str) -> None:
+            session.post(lambda m=message: status(m))
+
+        self.on_status(f"Copying into {target}…")
+        session.submit(lambda ftp: copy_items(ftp, items, target, step),
+                       lambda notes: self._done("Copied", target, notes),
+                       lambda m: (messagebox.showerror("KaiDrop", f"Couldn't copy everything:\n{m}"),
+                                  self.refresh()))
+
+    def move_into(self, items: list[Item], folder: str) -> None:
+        """Moves items into folder on the server (Paste after Cut, or a drag onto a folder)."""
+        if not self.session or not items:
+            return
+        self.on_status(f"Moving into {folder}…")
+        self.session.submit(lambda ftp: move_items(ftp, items, folder),
+                            lambda notes: self._done("Moved", folder, notes),
+                            lambda m: (messagebox.showerror("KaiDrop", f"Couldn't move everything:\n{m}"),
+                                       self.refresh()))
+
+    def _done(self, verb: str, folder: str, notes: list[str]) -> None:
+        self.refresh(quiet=True)
+        self.on_status(" ".join(notes) if notes else f"{verb} to {folder}.")
 
     def _delete(self) -> None:
         sel = self.selected()

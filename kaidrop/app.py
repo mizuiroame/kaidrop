@@ -17,7 +17,7 @@ from .appicon import APP_ICONS
 from .batch import Batch, leftover
 from .conflict import ConflictDialog, Side
 from .download import DownloadItem, DownloadPlan, LocalFile, download, plan_download
-from .dragdrop import Drag
+from .dragdrop import Drag, Target
 from .ftp import Choice, Connection, RemoteFile, Status, upload
 from .logview import ERROR, GOOD, INFO, LogView
 from .panes import LocalPane, RemotePane, human_size
@@ -99,12 +99,19 @@ class KaiDrop(_Root):
         panes.add(self.remote, weight=1)
 
         connected = lambda: self.session is not None  # noqa: E731
-        Drag(self, self.local, self.remote, "Send",
-             lambda row: posixpath.join(self.remote.path, row) if row else self.remote.path,
-             lambda row: self._queue_send(self.local.selected_paths(), self._remote_folder(row)), connected)
-        Drag(self, self.remote, self.local, "Receive",
-             lambda row: str(self.local.path / row) if row else str(self.local.path),
-             lambda row: self._download(self.remote.selected(), self._local_folder(row)), connected)
+        remote_folder = lambda row: posixpath.join(self.remote.path, row) if row else self.remote.path  # noqa: E731
+        Drag(self, self.local, [Target(self.remote, "Send", remote_folder,
+                                       lambda row: self._queue_send(self.local.selected_paths(),
+                                                                    self._remote_folder(row)), connected)])
+        Drag(self, self.remote, [
+            Target(self.local, "Receive", lambda row: str(self.local.path / row) if row else str(self.local.path),
+                   lambda row: self._download(self.remote.selected(), self._local_folder(row)), connected),
+            # Onto one of the server's own folders: moved there.
+            Target(self.remote, "Move", remote_folder,
+                   lambda row: self.remote.move_into(
+                       [(posixpath.join(self.remote.path, name), is_dir) for name, is_dir in self.remote.selected()],
+                       self._remote_folder(row)),
+                   connected, folders_only=True)])
         if DND_FILES:
             self.remote.tree.drop_target_register(DND_FILES)
             self.remote.tree.dnd_bind("<<Drop>>", self._os_drop)

@@ -74,17 +74,26 @@ by its file name, which on the console is the plain one.
    *Data (D:)*); the folder's contents are below it. Browse both sides
    (double-click a folder, **↑** goes up, or type a path and press Enter).
    **Right-click** for more: on the left, *Send to the server*, *Open*,
-   *New folder* and *Refresh*; on the right, *Open*, *New folder*, *Rename*
-   (F2), *Delete* (Del) and *Refresh* (F5). With plain names on, folders
-   made or renamed on the console get plain names too.
+   *New folder* and *Refresh*; on the right, *Open*, *Cut* (Ctrl+X), *Copy*
+   (Ctrl+C), *Paste* (Ctrl+V; on a folder, *Paste into* it), *New folder*,
+   *Rename* (F2), *Delete* (Del) and *Refresh* (F5). With plain names on,
+   folders made or renamed on the console get plain names too.
+   **Moving on the console** (cut and paste, or dragging onto one of its
+   folders) is instant. **Copying** goes through your computer, since FTP
+   can't copy on the server: each file comes down and goes back up, so a big
+   video takes as long as sending it. A name already there gets a free one
+   (*name (2)*), and a folder can't go into itself.
 4. **Send** files or folders by **dragging them from the left onto the
    right** (onto a folder to send them into it), by dragging them from
    Explorer, or with **right-click → Send to the server**. **Receive** them the
    other way: drag from the right onto the left, or **right-click → Download to
    this computer** (into the folder shown on the left). While you drag, a label
    by the pointer shows what you're moving and where it will land, and the
-   folder under the pointer lights up. Select several as in Explorer:
-   **Ctrl+click** adds or removes one, **Shift+click** selects a range,
+   folder under the pointer lights up. On the right, dragging onto one of its
+   own folders moves the files there. Select several as in Explorer:
+   **drag** from a file that isn't selected (or from the empty space under
+   the files) to select the ones you go over (with **Ctrl** they're added to
+   the others), **Ctrl+click** adds or removes one, **Shift+click** selects a range,
    **Shift+↑/↓** (and Shift+Home/End) extend the selection from the keyboard,
    and **Ctrl+A** selects everything. Dragging any of the selected files takes
    them all.
@@ -139,7 +148,8 @@ powershell -File build.ps1                         # builds dist/KaiDrop.exe
 | `kaidrop/panes.py` | The file panes: this computer and the server, right-click menus, selection |
 | `kaidrop/foldertree.py` | This computer's folder tree, like Explorer's |
 | `kaidrop/places.py` | Where the tree starts: Desktop, Documents… and the drives, by name |
-| `kaidrop/dragdrop.py` | Dragging between the panes, with a label by the pointer |
+| `kaidrop/dragdrop.py` | Dragging between the panes (or onto a server folder), with a label by the pointer |
+| `kaidrop/serverops.py` | Moving and copying on the server itself (cut, copy and paste) |
 | `kaidrop/conflict.py` | The window for a file already where another is going |
 | `kaidrop/remote.py` | Browsing the server: listings (MLSD or LIST), deleting, its own thread |
 | `kaidrop/logview.py` | The Log tab |

@@ -108,6 +108,10 @@ class RemoteSession:
                on_error: Callable[[str], None]) -> None:
         self._jobs.put((job, on_result, on_error))
 
+    def post(self, fn: Callable[[], None]) -> None:
+        """Hands fn to the window's thread: for a job to say how it's going."""
+        self._post(fn)
+
     def close(self) -> None:
         self._jobs.put(None)
 

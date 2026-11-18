@@ -66,6 +66,40 @@ class SelectionTest(unittest.TestCase):
         self.pane._press(SimpleNamespace(x=10, y=10, state=CONTROL))
         self.assertIsNone(self.pane._held)
 
+    def drag(self, start_row, rows_by_y, end_y, state=0):
+        """Presses on start_row and drags to end_y; rows_by_y says which row is at a y."""
+        self.press(start_row, y=10, state=state)
+        self.tree.identify_row = lambda y: rows_by_y.get(y, "")
+        return self.pane._band_motion(SimpleNamespace(x=10, y=end_y, state=state))
+
+    def test_dragging_from_an_unselected_row_selects_the_rows_it_crosses(self):
+        self.tree.selection_set("0")
+        result = self.drag("1", {60: "4"}, 60)
+        self.assertEqual(result, "break")  # Not a drag of files.
+        self.assertEqual(self.tree.selection(), ("1", "2", "3", "4"))
+        self.pane._band_motion(SimpleNamespace(x=10, y=30, state=0))  # Back up a little.
+        self.tree.identify_row = lambda y: {30: "2"}.get(y, "")
+        self.pane._band_motion(SimpleNamespace(x=10, y=30, state=0))
+        self.assertEqual(self.tree.selection(), ("1", "2"))
+
+    def test_ctrl_drag_adds_to_the_selection(self):
+        self.tree.selection_set("5")
+        self.tree.identify_row = lambda _y: "1"
+        self.pane._press(SimpleNamespace(x=10, y=10, state=CONTROL))
+        self.tree.identify_row = lambda y: {50: "2"}.get(y, "")
+        self.pane._band_motion(SimpleNamespace(x=10, y=50, state=CONTROL))
+        self.assertEqual(set(self.tree.selection()), {"5", "1", "2"})
+
+    def test_a_small_wobble_is_still_a_click(self):
+        self.tree.selection_set("0")
+        self.drag("1", {12: "1"}, 12)
+        self.assertEqual(self.tree.selection(), ("1",))
+
+    def test_dragging_a_selected_row_moves_files_instead(self):
+        self.tree.selection_set(("1", "2"))
+        self.press("2")
+        self.assertIsNone(self.pane._band_motion(SimpleNamespace(x=10, y=80, state=0)))
+
 
 if __name__ == "__main__":
     unittest.main()

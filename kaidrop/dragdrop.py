@@ -1,9 +1,11 @@
-"""Dragging the selected files of one pane onto the other. While dragging, a
-small label follows the pointer with what's being moved and where it would
-land, and the folder under the pointer lights up."""
+"""Dragging the selected files of one pane onto the other, or onto a folder
+of the same pane (moving them on the server). While dragging, a small label
+follows the pointer with what's being moved and where it would land, and the
+folder under the pointer lights up."""
 from __future__ import annotations
 
 import tkinter as tk
+from dataclasses import dataclass
 from typing import Callable
 
 from .panes import FilePane
@@ -15,22 +17,32 @@ GHOST_BG, GHOST_TEXT, GHOST_DIM = "#2b2b33", "#ffffff", "#b8b8c4"
 DROP_BG = "#cfe3ff"
 
 
-class Drag:
-    """destination(folder_row) names where a drop would go: the target pane's
-    folder named by the row under the pointer, or (None) the folder it shows.
-    on_drop(folder_row) does it. can_drop() says whether dropping is possible."""
+@dataclass(frozen=True)
+class Target:
+    """A pane the selection can be dropped on. destination(folder_row) names
+    where a drop would go: the pane's folder named by the row under the
+    pointer, or (None) the folder it shows. on_drop(folder_row) does it.
+    can_drop() says whether dropping is possible. folders_only: only on a
+    folder row (the source's own pane: the folder it shows is where they are)."""
+    pane: FilePane
+    verb: str
+    destination: Callable[[str | None], str]
+    on_drop: Callable[[str | None], None]
+    can_drop: Callable[[], bool] = lambda: True
+    folders_only: bool = False
 
-    def __init__(self, root: tk.Misc, source: FilePane, target: FilePane, verb: str,
-                 destination: Callable[[str | None], str], on_drop: Callable[[str | None], None],
-                 can_drop: Callable[[], bool] = lambda: True) -> None:
-        self.root, self.source, self.target = root, source, target
-        self.verb = verb
-        self.destination, self.on_drop, self.can_drop = destination, on_drop, can_drop
+
+class Drag:
+    """Drags the source pane's selection onto any of the targets."""
+
+    def __init__(self, root: tk.Misc, source: FilePane, targets: list[Target]) -> None:
+        self.root, self.source, self.targets = root, source, targets
         self._start: tuple[int, int] | None = None
         self.dragging = False
-        self._lit: str | None = None
+        self._lit: tuple[FilePane, str] | None = None
         self._ghost: tk.Toplevel | None = None
-        target.tree.tag_configure("drop", background=DROP_BG)
+        for t in targets:
+            t.pane.tree.tag_configure("drop", background=DROP_BG)
         tree = source.tree
         tree.bind("<ButtonPress-1>", self._press, add="+")
         tree.bind("<B1-Motion>", self._motion, add="+")
@@ -70,27 +82,32 @@ class Drag:
 
     # --- The folder under the pointer ---
 
-    def _folder_under(self, x_root: int, y_root: int) -> tuple[bool, str | None, str]:
-        """Whether the pointer is over the target list, the folder row under it
-        (None for the list's own folder) and that row's id ("" for none)."""
-        tree = self.target.tree
-        if self.root.winfo_containing(x_root, y_root) is not tree:
-            return False, None, ""
-        iid = tree.identify_row(y_root - tree.winfo_rooty())
-        entry = self.target.entries.get(iid)
-        if entry and entry[1]:
-            return True, entry[0], iid
-        return True, None, ""
+    def _folder_under(self, x_root: int, y_root: int) -> tuple[Target | None, str | None, str]:
+        """The target under the pointer (None if it's over none it can drop
+        on), the folder row under it (None for the list's own folder) and
+        that row's id ("" for none)."""
+        widget = self.root.winfo_containing(x_root, y_root)
+        for target in self.targets:
+            tree = target.pane.tree
+            if widget is not tree:
+                continue
+            iid = tree.identify_row(y_root - tree.winfo_rooty())
+            entry = target.pane.entries.get(iid)
+            is_folder = bool(entry and entry[1])
+            if target.folders_only and (not is_folder or iid in tree.selection()):
+                continue  # Not a folder, or one of those being dragged.
+            return (target, entry[0], iid) if is_folder else (target, None, "")
+        return None, None, ""
 
-    def _light(self, iid: str) -> None:
-        if iid == self._lit:
+    def _light(self, pane: FilePane | None, iid: str) -> None:
+        lit = (pane, iid) if pane and iid else None
+        if lit == self._lit:
             return
-        tree = self.target.tree
-        if self._lit and tree.exists(self._lit):
-            tree.item(self._lit, tags=())
-        if iid:
-            tree.item(iid, tags=("drop",))
-        self._lit = iid or None
+        if self._lit and self._lit[0].tree.exists(self._lit[1]):
+            self._lit[0].tree.item(self._lit[1], tags=())
+        if lit:
+            pane.tree.item(iid, tags=("drop",))
+        self._lit = lit
 
     # --- Events ---
 
@@ -108,23 +125,23 @@ class Drag:
             self.dragging = True
             self._make_ghost()
             self.root.config(cursor="hand2")
-        over, folder, iid = self._folder_under(event.x_root, event.y_root)
-        ok = over and self.can_drop()
-        self._light(iid if ok else "")
-        where = f"{self.verb} to {self.destination(folder)}" if ok else "Drop it on the other side"
+        target, folder, iid = self._folder_under(event.x_root, event.y_root)
+        ok = target is not None and target.can_drop()
+        self._light(target.pane if ok else None, iid)
+        where = f"{target.verb} to {target.destination(folder)}" if ok else "Drop it on the other side or a folder"
         self._place_ghost(event.x_root, event.y_root, where, ok)
 
     def _release(self, event: tk.Event) -> None:
         dragging = self.dragging
-        over, folder, _ = self._folder_under(event.x_root, event.y_root) if dragging else (False, None, "")
+        target, folder, _ = self._folder_under(event.x_root, event.y_root) if dragging else (None, None, "")
         self._stop()
-        if dragging and over and self.can_drop():
-            self.on_drop(folder)
+        if dragging and target is not None and target.can_drop():
+            target.on_drop(folder)
 
     def _stop(self) -> None:
         self._start = None
         self.dragging = False
-        self._light("")
+        self._light(None, "")
         if self._ghost:
             self._ghost.destroy()
             self._ghost = None
