@@ -1,126 +1,54 @@
 # KaiDrop
 
-**Send music (or anything) from your computer to a Switch 2 running kaiHEN,
-over FTP — with file names the console can actually list.**
+A Windows app that **sends music (or anything) from your computer to a
+Switch 2 running kaiHEN, over FTP**, with file names the console can actually
+list. It looks like FileZilla: your computer on the left, the console on the
+right. It works with any FTP server; on the console, use OunceShell's.
 
 Tested on a Switch 2 with OunceShell's FTP server: over a gigabyte of
 music, and a transfer cut halfway and continued after reconnecting.
 
-![KaiDrop](docs/kaidrop.png)
+![KaiDrop: this computer on the left, the console on the right](docs/kaidrop.png)
 
-## The problem
+*KaiDrop: this computer on the left, the console on the right.*
 
-On Switch 2, a file or folder whose name has a character outside basic
-ASCII — an accented letter such as **á, é, ñ, ü**, typographic quotes such as
-**’**, or Japanese, Chinese or Korean — is saved to the SD card, but the
-console's file system leaves it out of its folder: it isn't listed, and it
-isn't even counted among the folder's entries. Every app sees folders through
-that file system, so every app is affected: FTP listings, OunceShell's file
-browser, KaiPlayer and any other homebrew. The file takes up space but
-nothing can see it, and nothing on the console can find it to rename it: the
-names have to be right before the files get there.
+![When a file is already there](docs/conflict.png)
 
-So `06 Canción.flac` uploaded with FileZilla is invisible, while
-`06 Cancion.flac` works.
+*When a file is already on the console, KaiDrop asks what to do.*
 
-## What KaiDrop does
+## What it can do
 
-- Sends folders and files over FTP, keeping the folder structure, and
-  receives them back from the console the same way. It works with any FTP
-  server; on the console, use OunceShell's.
-- With **Plain names for Switch 2** on (the default), it gives each copy on
-  the console a name it can list:
-  - accents are dropped: `Canción` → `Cancion`, `Ñandú` → `Nandu`;
-  - typographic punctuation becomes plain: `Why’d` → `Why'd`, `–` → `-`;
-  - other characters, like Japanese, become `_`: `04 みずいろの雨.mp3` →
-    `04 _.mp3`;
-  - names that would clash get a number: `Cancion (2).mp3`.
-- **Your files on the computer are never renamed or changed.** Only the
-  copies on the console get the new names.
-- Shows, before sending, each file's name on your computer and on the
-  console (renamed ones in color).
-- When a file is already on the console, asks what to do, showing both
-  files' names, sizes and dates: **Skip**, **Replace**, **Keep both** (the
-  new one is sent as `name (2)`) or **Cancel the batch** — for that file or
-  for every one in the batch. Sending a folder again after adding songs:
-  choose Skip for all.
+- **Plain names for Switch 2.** The console hides files and folders whose
+  names have accents or other non-ASCII characters, in every app. KaiDrop
+  gives the copies on the console names it can list: `06 Canción.flac`
+  becomes `06 Cancion.flac`. **Your files on the computer are never renamed
+  or changed.** [More](docs/plain-names.md)
+- **Send and receive** folders and files, keeping the folder structure, by
+  dragging between the two sides, from Explorer, or with right-click.
+  [More](docs/using-it.md#send-and-receive)
+- **Shows the names before sending**: each file's name on your computer and
+  on the console, renamed ones in color.
+  [More](docs/using-it.md#the-transfers-tab)
+- **Asks when a file is already there**: Skip, Replace, Keep both or Cancel
+  the batch, for that file or for every one in the batch.
+  [More](docs/using-it.md#a-file-already-there)
+- **Manage files on the console**: new folder, rename, delete, cut, copy and
+  paste. [More](docs/using-it.md#on-the-console)
+- **Survives a lost connection**: it notices when the server goes away,
+  offers **Reconnect** and continues with the files left. A half-sent file
+  never looks whole. [More](docs/using-it.md#connection-lost)
+- **Speed and time left** while moving files, and a **Log** tab like
+  FileZilla's message log. [More](docs/using-it.md#the-transfers-tab)
+- **Remembers** the console's address and the destination folder.
 
-  ![When a file is already there](docs/conflict.png)
+## Install
 
-- Shows whether it's connected, notices when the server goes away (OunceShell
-  closed, the console asleep) and offers **Reconnect**, then continues with
-  the files left. A file only gets its name on arrival once it's complete,
-  so a lost connection never leaves a half song that looks whole. While
-  moving files it shows the speed and the time left. The **Log** tab lists
-  what happened, with the time, like FileZilla's message log.
-- Remembers the console's address and the destination folder.
-
-Music players such as [KaiPlayer](https://github.com/mizuiroame/kaiplayer)
-read the title, artist and album from the songs' tags, so they still show
-**Canción** with its accent, or the Japanese title, whatever the file is
-called. That relies on the songs being tagged: a song without tags is shown
-by its file name, which on the console is the plain one.
-
-## Use it
-
-1. On the console, open **OunceShell** and start its **FTP server**. Note
-   the IP address and port it shows.
-2. On your computer, open **KaiDrop**, type the **Host** (the IP address)
-   and **Port** (and the user and password, if your server asks for them),
-   and press **Connect**.
-3. KaiDrop looks like FileZilla: **your computer on the left, the console on
-   the right**. On the left, a folder tree like Explorer's starts from
-   Desktop, Documents, Downloads, Music and your drives (by name, such as
-   *Data (D:)*); the folder's contents are below it. Browse both sides
-   (double-click a folder, **↑** goes up, or type a path and press Enter).
-   **Right-click** for more: on the left, *Send to the server*, *Open*,
-   *New folder* and *Refresh*; on the right, *Open*, *Cut* (Ctrl+X), *Copy*
-   (Ctrl+C), *Paste* (Ctrl+V; on a folder, *Paste into* it), *New folder*,
-   *Rename* (F2), *Delete* (Del) and *Refresh* (F5). With plain names on,
-   folders made or renamed on the console get plain names too.
-   **Moving on the console** (cut and paste, or dragging onto one of its
-   folders) is instant. **Copying** goes through your computer, since FTP
-   can't copy on the server: each file comes down and goes back up, so a big
-   video takes as long as sending it. A name already there gets a free one
-   (*name (2)*), and a folder can't go into itself.
-4. **Send** files or folders by **dragging them from the left onto the
-   right** (onto a folder to send them into it), by dragging them from
-   Explorer, or with **right-click → Send to the server**. **Receive** them the
-   other way: drag from the right onto the left, or **right-click → Download to
-   this computer** (into the folder shown on the left). While you drag, a label
-   by the pointer shows what you're moving and where it will land, and the
-   folder under the pointer lights up. Dragging **up or down inside a list
-   selects** the files and folders you go over (with **Ctrl** they're added
-   to the others; past the top or bottom the list scrolls); the selection
-   is **moved once the pointer leaves the list** toward the other side
-   (brought back over one of the server's own folders, it moves there).
-   Select several as in Explorer too: **Ctrl+click** adds or removes one, **Shift+click** selects a range,
-   **Shift+↑/↓** (and Shift+Home/End) extend the selection from the keyboard,
-   and **Ctrl+A** selects everything. Dragging any of the selected files takes
-   them all.
-5. The **Transfers** tab shows each file, where it comes from and goes
-   (renamed ones in color) and how it went; above it, how much is done, the
-   speed and the time left (*11.7 MB of 1.1 GB · 3.9 MB/s · 4 min 50 s
-   left*). **Cancel** stops the batch being
-   moved (a half-moved file is removed); **Clear finished** tidies the list.
-   A file being moved is called `name.part` until it's complete, so if the
-   connection is lost halfway, no half file is left with the real name (a
-   leftover `.part` can be deleted, and sending again replaces it).
-   A file already where another is going (on the console when sending, on
-   your computer when receiving) asks first: skip, replace, keep both or
-   cancel.
-   The **Log** tab shows what KaiDrop did and what the server said.
-6. Next to **Connect**, a dot shows the connection. If it turns red
-   (*Connection lost*), start OunceShell's FTP server again and press
-   **Reconnect**. Files that were still to be moved show as *Stopped*;
-   after reconnecting, KaiDrop offers to continue with them (the ones
-   already moved aren't sent again).
-
-## Download
-
-Get `KaiDrop.exe` (Windows) from
-[Releases](https://github.com/mizuiroame/kaidrop/releases). It needs nothing
-else installed.
+1. Get `KaiDrop.exe` (Windows) from
+   [Releases](https://github.com/mizuiroame/kaidrop/releases). It needs
+   nothing else installed.
+2. On the console, open **OunceShell** and start its **FTP server**.
+3. Open **KaiDrop**, type the address and port the console shows, and press
+   **Connect**. See [Using KaiDrop](docs/using-it.md).
 
 On macOS or Linux, run it from source with Python 3.10 or later (Tkinter
 included):
@@ -129,33 +57,14 @@ included):
 python -m kaidrop
 ```
 
-## For developers
+## Documentation
 
-```
-python -m unittest discover -s tests -t .          # tests (FTP tests need pyftpdlib)
-pip install -r requirements-dev.txt                # pyftpdlib and PyInstaller
-powershell -File build.ps1                         # builds dist/KaiDrop.exe
-```
-
-| File | What it does |
-|------|--------------|
-| `kaidrop/names.py` | The plain names for the console |
-| `kaidrop/plan.py` | What to send where: the files and their names on the console |
-| `kaidrop/ftp.py` | Sending: folders, files already there, `.part` until complete, cancel |
-| `kaidrop/download.py` | Receiving: what comes where, names Windows allows, `.part` until complete |
-| `kaidrop/batch.py` | A batch in the queue, and what's left of it to continue after Reconnect |
-| `kaidrop/rate.py` | The speed and time left |
-| `kaidrop/app.py` | The window: connection, the two panes, transfers, log |
-| `kaidrop/panes.py` | The file panes: this computer and the server, right-click menus, selection |
-| `kaidrop/foldertree.py` | This computer's folder tree, like Explorer's |
-| `kaidrop/places.py` | Where the tree starts: Desktop, Documents… and the drives, by name |
-| `kaidrop/dragdrop.py` | Dragging between the panes (or onto a server folder), with a label by the pointer |
-| `kaidrop/serverops.py` | Moving and copying on the server itself (cut, copy and paste) |
-| `kaidrop/conflict.py` | The window for a file already where another is going |
-| `kaidrop/remote.py` | Browsing the server: listings (MLSD or LIST), deleting, its own thread |
-| `kaidrop/logview.py` | The Log tab |
-| `kaidrop/icons.py` | The file panes' icons |
-| `kaidrop/settings.py` | Remembers the address and folders (never the password) |
+- [Plain names for Switch 2](docs/plain-names.md): why names with accents
+  vanish on the console, and how KaiDrop renames the copies
+- [Using KaiDrop](docs/using-it.md): connecting, browsing, sending and
+  receiving, the Transfers and Log tabs, reconnecting
+- [For developers](docs/developers.md): tests, building the .exe, what each
+  file does
 
 ## Legal notice
 
