@@ -22,6 +22,7 @@ powershell -File build.ps1                         # builds dist/KaiDrop.exe
 | File | What it does |
 |------|--------------|
 | `kaidrop/names.py` | The plain names for the console |
+| `kaidrop/playlists.py` | Playlists' copies for the console, pointing to the songs' plain names |
 | `kaidrop/plan.py` | What to send where: the files and their names on the console |
 | `kaidrop/ftp.py` | Sending: folders, files already there, `.part` until complete, cancel |
 | `kaidrop/download.py` | Receiving: what comes where, names Windows allows, `.part` until complete |

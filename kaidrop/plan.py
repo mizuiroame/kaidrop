@@ -3,10 +3,11 @@ the names they get on the console."""
 from __future__ import annotations
 
 import posixpath
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .names import unique_names
+from .playlists import PlaylistCopy, is_playlist, local_key, prepare
 
 
 @dataclass(frozen=True)
@@ -15,6 +16,11 @@ class UploadItem:
     remote: str      # Its full path on the console.
     size: int
     renamed: bool    # Its name (or a folder above it) was changed for the console.
+    playlist: PlaylistCopy | None = None  # A playlist whose copy points to the songs' names there.
+
+    @property
+    def playlist_changes(self) -> int:
+        return len(self.playlist.changes) if self.playlist else 0
 
 
 @dataclass(frozen=True)
@@ -61,4 +67,15 @@ def build_plan(sources: list[Path], remote_root: str, plain: bool = True) -> Pla
             _walk(source, target, plain, changed, items, folders)
         elif source.is_file():
             items.append(UploadItem(source, target, source.stat().st_size, changed))
-    return Plan(tuple(items), tuple(dict.fromkeys(folders)))
+    return Plan(tuple(_with_playlists(items, plain)), tuple(dict.fromkeys(folders)))
+
+
+def _with_playlists(items: list[UploadItem], plain: bool) -> list[UploadItem]:
+    """Playlists get a copy that points to the songs' names on the console
+    (the file on this computer stays as it is)."""
+    sent = {local_key(item.local): item.remote for item in items}
+    result = []
+    for item in items:
+        copy = prepare(item.local, item.remote, sent, plain) if is_playlist(item.local) else None
+        result.append(replace(item, size=copy.size, playlist=copy) if copy else item)
+    return result

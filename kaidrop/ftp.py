@@ -4,6 +4,7 @@ whole (and that a later "Skip" would keep)."""
 from __future__ import annotations
 
 import ftplib
+import io
 import posixpath
 import threading
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from enum import Enum
 from typing import Callable
 
 from .plan import Plan, UploadItem
+from .playlists import describe as describe_playlist
 
 BLOCK_SIZE = 64 * 1024
 PART = ".part"
@@ -127,7 +129,8 @@ def upload(conn: Connection, plan: Plan, on_progress: ProgressFn, on_done: DoneF
     """Uploads every item, reporting progress, and returns how many ended in
     each status. For a file already on the server, on_conflict says what to
     do; without it, one with the same size is skipped and others replaced.
-    A file sent as a copy reports its new path as the message."""
+    A file sent as a copy reports its new path as the message; a playlist
+    sent, what was changed in its copy."""
     counts = {status: 0 for status in Status}
     ftp = connect(conn)
     total_sent = 0
@@ -176,10 +179,17 @@ def upload(conn: Connection, plan: Plan, on_progress: ProgressFn, on_done: DoneF
                 on_progress(index, item, sent, total_sent)
 
             try:
-                with item.local.open("rb") as f:
+                note = ""
+                if item.playlist:  # Its copy points to the songs' names on the console.
+                    data, changed, missing = item.playlist.render(lambda p: _remote_size(ftp, p) is not None)
+                    note = describe_playlist(posixpath.basename(target), changed, missing, item.playlist.outside)
+                    source = io.BytesIO(data)
+                else:
+                    source = item.local.open("rb")
+                with source as f:
                     ftp.storbinary(f"STOR {part}", f, BLOCK_SIZE, callback=block)
                 _settle(ftp, part, target)
-                on_done(index, item, status, target if status is Status.COPY else "")
+                on_done(index, item, status, target if status is Status.COPY else note)
                 counts[status] += 1
             except Cancelled:
                 ftp = _reconnect_and_delete(conn, ftp, part)

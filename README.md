@@ -23,6 +23,9 @@ music, and a transfer cut halfway and continued after reconnecting.
   gives the copies on the console names it can list: `06 Canción.flac`
   becomes `06 Cancion.flac`. **Your files on the computer are never renamed
   or changed.** [More](docs/plain-names.md)
+- **Playlists keep working**: the copy of an `.m3u`, `.m3u8` or `.pls` on
+  the console points to the songs' plain names.
+  [More](docs/plain-names.md#playlists-keep-working)
 - **Send and receive** folders and files, keeping the folder structure, by
   dragging between the two sides, from Explorer, or with right-click.
   [More](docs/using-it.md#send-and-receive)

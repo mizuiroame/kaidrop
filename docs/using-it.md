@@ -75,6 +75,10 @@ Folders and files keep their folder structure, both ways.
 - It shows each file, where it comes from and goes (renamed ones in color)
   and how it went. Before sending, you see each file's name on your computer
   and on the console.
+- A playlist whose copy on the console will point to the songs' plain names
+  says so: *Playlists\mix.m3u8 (playlist: 12 entries renamed)*. Once it's
+  sent, the Log tab says how many entries were changed, and how many were
+  left as they were. See [Playlists keep working](plain-names.md#playlists-keep-working).
 - Above it: how much is done, the speed and the time left (*11.7 MB of
   1.1 GB · 3.9 MB/s · 4 min 50 s left*).
 - **Cancel** stops the batch being moved (a half-moved file is removed).

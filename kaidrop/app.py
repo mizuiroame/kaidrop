@@ -274,9 +274,12 @@ class KaiDrop(_Root):
         for item in plan.items:
             iid = self._new_row()
             rows.append(iid)
-            self.queue.insert("", "end", iid=iid, text=str(Path(*item.local.parts[-2:])),
+            text = str(Path(*item.local.parts[-2:]))
+            if item.playlist_changes:  # Its copy will point to the songs' names on the console.
+                text += f"  (playlist: {item.playlist_changes} entries renamed)"
+            self.queue.insert("", "end", iid=iid, text=text,
                               values=(item.remote, human_size(item.size), "Waiting"),
-                              tags=("renamed",) if item.renamed else ())
+                              tags=("renamed",) if item.renamed or item.playlist_changes else ())
         self._start(Batch("up", plan, tuple(rows), folder))
         self._remember()
         renamed = f", {plan.renamed_count} with plain names" if plan.renamed_count else ""
@@ -360,6 +363,8 @@ class KaiDrop(_Root):
         self.queue.set(iid, "status", text if status is not Status.FAILED else f"Failed: {message}"[:40])
         if status is Status.COPY:
             self.queue.set(iid, "remote", message)
+        elif status is Status.SENT and message:
+            self.log.add(message)  # What a playlist's copy points to.
         if status is Status.FAILED:
             self.queue.item(iid, tags=(*self.queue.item(iid, "tags"), "failed"))
             self.log.add(f"Failed: {self.queue.set(iid, 'remote')}: {message}", ERROR)

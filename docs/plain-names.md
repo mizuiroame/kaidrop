@@ -39,6 +39,36 @@ Before sending, KaiDrop shows each file's name on your computer and on the
 console (renamed ones in color). With plain names on, folders made or renamed
 on the console get plain names too.
 
+## Playlists keep working
+
+A playlist (`.m3u`, `.m3u8` or `.pls`) lists its songs by path, so once the
+songs or their folders get plain names, the old paths lead nowhere. When
+KaiDrop sends a playlist, the copy on the console points to the names the
+songs have there:
+
+- an entry relative to the playlist (`../Artista Ñ/06 Canción.flac`, as in
+  most playlists) gets the same plain names as the song and the folders on
+  its way: `../Artista N/06 Cancion.flac`;
+- an absolute entry (`C:\Music\Artista Ñ\06 Canción.flac` or `file:///…`)
+  whose song is being sent too becomes relative to the playlist on the
+  console; one outside what's sent is left as it was, and the Log tab says
+  how many there are;
+- a song sent in the same batch gets its new name; for one sent before,
+  KaiDrop checks it's on the console. An entry whose song isn't on the
+  console, or not on this computer, is left as it was;
+- `#EXTM3U`, `#EXTINF` and other comment lines, the line endings and the
+  encoding stay as they were (`.m3u8` is UTF-8; `.m3u` the Windows code
+  page, or UTF-8). New paths use `/`.
+
+This works with the songs and playlists laid out on the console as on the
+computer (a playlist in `Music\Playlists` with songs in `Music\Artist`).
+[KaiPlayer](https://github.com/mizuiroame/kaiplayer) reads playlists from
+the `Playlists` folder of its music folder, with paths relative to it.
+
+**The playlist on the computer isn't changed**, only its copy on the console.
+Receiving a playlist back brings the console's copy as it is, with the plain
+names.
+
 ## Song titles keep their accents
 
 Music players such as [KaiPlayer](https://github.com/mizuiroame/kaiplayer)
