@@ -304,11 +304,12 @@ class KaiDrop(_Root):
             progress = lambda i, item, sent, total: post(lambda r=rows[i], t=total: self._progress(r, t))  # noqa: E731
             done = lambda i, item, st, msg: post(  # noqa: E731
                 lambda r=rows[i], s=st, m=msg, n=item.size: self._row_done(r, s, m, n))
+            note = lambda text: post(lambda t=text: self.log.add(t))  # noqa: E731
             try:
                 if receiving:
-                    counts = download(conn, plan, progress, done, self.cancel, self._ask_download_from_worker)
+                    counts = download(conn, plan, progress, done, self.cancel, self._ask_download_from_worker, note)
                 else:
-                    counts = upload(conn, plan, progress, done, self.cancel, self._ask_from_worker)
+                    counts = upload(conn, plan, progress, done, self.cancel, self._ask_from_worker, note)
                 post(lambda c=counts, d=folder, r=receiving: self._finished(c, d, r))
             except Exception as e:  # Connection problems end this batch with a message.
                 post(lambda b=batch, m=_reason(e): self._failed(b, m))

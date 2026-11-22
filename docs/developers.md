@@ -26,6 +26,7 @@ powershell -File build.ps1                         # builds dist/KaiDrop.exe
 | `kaidrop/plan.py` | What to send where: the files and their names on the console |
 | `kaidrop/ftp.py` | Sending: folders, files already there, `.part` until complete, cancel |
 | `kaidrop/download.py` | Receiving: what comes where, names Windows allows, `.part` until complete |
+| `kaidrop/sw2.py` | SW2Transfer's HTTP API: finding it, signing in, files in chunks over 8 connections (both ways) |
 | `kaidrop/batch.py` | A batch in the queue, and what's left of it to continue after Reconnect |
 | `kaidrop/rate.py` | The speed and time left |
 | `kaidrop/app.py` | The window: connection, the two panes, transfers, log |

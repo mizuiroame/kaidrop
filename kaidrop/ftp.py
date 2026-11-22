@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Callable
 
+from . import sw2
 from .plan import Plan, UploadItem
 from .playlists import describe as describe_playlist
 
@@ -34,6 +35,7 @@ class Connection:
     user: str = "anonymous"
     password: str = ""
     timeout: float = 30.0
+    sw2_port: int = sw2.API_PORT  # SW2Transfer's API, used for the files' bytes when it's there; 0: FTP only.
 
 
 class Cancelled(Exception):
@@ -122,10 +124,19 @@ def _make_folders(ftp: ftplib.FTP, folders: tuple[str, ...]) -> None:
 
 ProgressFn = Callable[[int, UploadItem, int, int], None]  # index, item, item bytes sent, total sent
 DoneFn = Callable[[int, UploadItem, Status, str], None]   # index, item, status, message
+NoteFn = Callable[[str], None]                             # A line for the log.
+
+
+def fast_path(conn: Connection, ftp: ftplib.FTP, on_note: NoteFn) -> sw2.Sw2Client | None:
+    """SW2Transfer's API on the same console, if it's there (see sw2.py)."""
+    if not conn.sw2_port:
+        return None
+    return sw2.for_ftp(conn.host, conn.password, ftp, on_note, conn.sw2_port)
 
 
 def upload(conn: Connection, plan: Plan, on_progress: ProgressFn, on_done: DoneFn,
-           cancel: threading.Event, on_conflict: ConflictFn | None = None) -> dict[Status, int]:
+           cancel: threading.Event, on_conflict: ConflictFn | None = None,
+           on_note: NoteFn = lambda _: None) -> dict[Status, int]:
     """Uploads every item, reporting progress, and returns how many ended in
     each status. For a file already on the server, on_conflict says what to
     do; without it, one with the same size is skipped and others replaced.
@@ -135,6 +146,8 @@ def upload(conn: Connection, plan: Plan, on_progress: ProgressFn, on_done: DoneF
     ftp = connect(conn)
     total_sent = 0
     for_all: Choice | None = None
+    fast = fast_path(conn, ftp, on_note)
+    lock = threading.Lock()  # SW2Transfer's chunks report from several threads.
     try:
         _make_folders(ftp, plan.folders)
         for index, item in enumerate(plan.items):
@@ -170,16 +183,26 @@ def upload(conn: Connection, plan: Plan, on_progress: ProgressFn, on_done: DoneF
             part = target + PART
             sent = 0
 
-            def block(data: bytes) -> None:
+            def moved(count: int) -> None:
                 nonlocal sent, total_sent
+                with lock:
+                    sent += count
+                    total_sent += count
+                    on_progress(index, item, sent, total_sent)
+
+            def block(data: bytes) -> None:
                 if cancel.is_set():
                     raise Cancelled()
-                sent += len(data)
-                total_sent += len(data)
-                on_progress(index, item, sent, total_sent)
+                moved(len(data))
 
             try:
                 note = ""
+                if fast and not item.playlist:  # SW2Transfer: the bytes over its API, in chunks at once.
+                    fast.upload(item.local, part, moved, cancel)
+                    _settle_sw2(fast, part, target)
+                    on_done(index, item, status, target if status is Status.COPY else note)
+                    counts[status] += 1
+                    continue
                 if item.playlist:  # Its copy points to the songs' names on the console.
                     data, changed, missing = item.playlist.render(lambda p: _remote_size(ftp, p) is not None)
                     note = describe_playlist(posixpath.basename(target), changed, missing, item.playlist.outside)
@@ -191,16 +214,19 @@ def upload(conn: Connection, plan: Plan, on_progress: ProgressFn, on_done: DoneF
                 _settle(ftp, part, target)
                 on_done(index, item, status, target if status is Status.COPY else note)
                 counts[status] += 1
-            except Cancelled:
-                ftp = _reconnect_and_delete(conn, ftp, part)
+            except (Cancelled, sw2.Sw2Cancelled):
+                cancel.set()  # Cancel all on the console stops the batch too.
+                ftp = _drop_part(conn, ftp, fast, part)
                 on_done(index, item, Status.CANCELLED, "")
                 counts[Status.CANCELLED] += 1
-            except (OSError, EOFError, ftplib.Error) as e:  # EOFError: the server closed mid-file.
+            except (OSError, EOFError, ftplib.Error, sw2.Sw2Error) as e:  # EOFError: the server closed mid-file.
                 on_done(index, item, Status.FAILED, str(e))
                 counts[Status.FAILED] += 1
-                ftp = _reconnect_and_delete(conn, ftp, part)
+                ftp = _drop_part(conn, ftp, fast, part)
     finally:
         _close(ftp)
+        if fast:
+            fast.close()
     return counts
 
 
@@ -212,6 +238,26 @@ def _settle(ftp: ftplib.FTP, part: str, target: str) -> None:
     except ftplib.error_perm:
         pass  # Nothing there.
     ftp.rename(part, target)
+
+
+def _settle_sw2(fast: sw2.Sw2Client, part: str, target: str) -> None:
+    """_settle through SW2Transfer, which closes its handle on part first."""
+    try:
+        fast.delete(target)
+    except sw2.Sw2Error:
+        pass  # Nothing there.
+    fast.rename(part, target)
+
+
+def _drop_part(conn: Connection, ftp: ftplib.FTP, fast: sw2.Sw2Client | None, part: str) -> ftplib.FTP:
+    """After a stopped file: a fresh FTP connection, and its part removed (by
+    SW2Transfer when it wrote it: it closes its handle first)."""
+    if fast:
+        try:
+            fast.delete(part)
+        except sw2.Sw2Error:
+            pass
+    return _reconnect_and_delete(conn, ftp, part)
 
 
 def _close(ftp: ftplib.FTP) -> None:

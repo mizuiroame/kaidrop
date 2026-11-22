@@ -16,6 +16,28 @@ KaiDrop works with any FTP server; on the console, use OunceShell's. It
 remembers the console's address and the destination folder (never the
 password).
 
+### Faster with SW2Transfer
+
+If the console runs [SW2Transfer](https://github.com/Rodpad/SW2Transfer)
+(the app, or its background plugin), KaiDrop moves the files' bytes through
+it: each big file goes in 2 MB pieces over 8 connections at once, about five
+times faster than FTP (SW2Transfer measured about 50 MB/s up and 40 down on
+Wi-Fi). Nothing to set up:
+
+- Connect as usual, to OunceShell's FTP or to SW2Transfer's own (port
+  **6700**). Browsing, folders and the questions about files already there
+  stay on FTP.
+- When a batch starts, KaiDrop looks for SW2Transfer on the same address
+  (port 6967) and checks that it shows the same folders as the FTP server.
+  The Log tab says when it's used ("SW2Transfer … found").
+- If SW2Transfer has a password, type it as the FTP password: KaiDrop signs
+  in to both with it. If it's wrong for SW2Transfer, KaiDrop says so in the
+  Log and sends over FTP.
+- **Cancel all** on the console (or in SW2Transfer's web page) stops KaiDrop's
+  batch too, and the unfinished file is removed. Files still arrive as
+  `.part` and get their name when whole.
+- Playlists' copies still go over FTP (they're small).
+
 ## Browse
 
 KaiDrop looks like FileZilla: **your computer on the left, the console on

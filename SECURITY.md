@@ -31,11 +31,15 @@ Windows itself, and bugs that belong to Python or a bundled library alone
 
 ## How KaiDrop handles your data
 
-- **What it connects to.** Only the FTP server at the address you type: your
-  console. Nothing else, and nothing about you is sent anywhere.
-- **Plain FTP.** The console's FTP servers don't offer encryption, so the user
-  name, the password and the files travel unencrypted on your network, as with
-  any FTP client. Use it on your home network only.
+- **What it connects to.** Only the console at the address you type: its FTP
+  server, and, when a batch starts, SW2Transfer's API on the same address
+  (port 6967), if it runs there. Nothing else, and nothing about you is sent
+  anywhere.
+- **Plain FTP and HTTP.** The console's FTP servers and SW2Transfer's API
+  don't offer encryption, so the user name, the password and the files travel
+  unencrypted on your network, as with any FTP client. Use it on your home
+  network only. SW2Transfer gets the FTP password only when it asks for one
+  (it then answers with a sign-in token for the rest of the batch).
 - **The password is never saved.** `%APPDATA%\KaiDrop\settings.json` keeps
   only the address, port, user name and folders used last time, and the
   file-name choice.
@@ -48,7 +52,10 @@ An FTP server decides what its listings say, so KaiDrop doesn't trust them:
   deleting or copying folders stops 32 levels deep, so a listing can't make
   KaiDrop climb out of a folder or go on forever.
 - A download stops past the size the server gave (plus 1 MB), and one of
-  unknown size stops when the disk gets below 1 GB free.
+  unknown size stops when the disk gets below 1 GB free. Through SW2Transfer,
+  the size it gives is checked the same way before anything comes.
+- SW2Transfer is used only when it shows the same folders as the FTP server,
+  so its paths are the same card's.
 - Names are made safe for Windows: characters it doesn't allow become `_`,
   reserved names (`CON`, `COM1`, `COM¹`...) get a `_`, characters that turn
   text around (which can make a program's name look like a song's) are

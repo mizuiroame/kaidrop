@@ -13,7 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from .ftp import Choice, Connection, Status, _remote_time, connect, free_name
+from . import sw2
+from .ftp import Choice, Connection, NoteFn, Status, _close, _remote_time, connect, fast_path, free_name
 from .remote import check_depth, list_dir
 
 BLOCK_SIZE = 64 * 1024
@@ -142,7 +143,8 @@ def _drop(path: Path) -> None:
 
 
 def download(conn: Connection, plan: DownloadPlan, on_progress: ProgressFn, on_done: DoneFn,
-             cancel: threading.Event, on_conflict: ConflictFn | None = None) -> dict[Status, int]:
+             cancel: threading.Event, on_conflict: ConflictFn | None = None,
+             on_note: NoteFn = lambda _: None) -> dict[Status, int]:
     """Downloads every item, reporting progress; returns how many ended in
     each status. For a file already here, on_conflict says what to do;
     without it, one with the same size is skipped and others replaced."""
@@ -150,6 +152,8 @@ def download(conn: Connection, plan: DownloadPlan, on_progress: ProgressFn, on_d
     ftp = connect(conn)
     total = 0
     for_all: Choice | None = None
+    fast = fast_path(conn, ftp, on_note)
+    lock = threading.Lock()  # SW2Transfer's chunks report from several threads.
     try:
         for folder in plan.folders:
             try:
@@ -204,28 +208,49 @@ def download(conn: Connection, plan: DownloadPlan, on_progress: ProgressFn, on_d
                 total += len(data)
                 on_progress(index, item, got, total)
 
+            def moved(count: int) -> None:
+                nonlocal got, total
+                with lock:
+                    got += count
+                    total += count
+                    on_progress(index, item, got, total)
+
             try:
-                with part.open("wb") as out:
-                    ftp.retrbinary(f"RETR {item.remote}", lambda d, o=out: block(d, o), BLOCK_SIZE)
+                if fast:  # SW2Transfer: the bytes over its API, in chunks at once.
+                    size = fast.size_of(item.remote)
+                    _check_room(item, size, part)
+                    fast.download(item.remote, part, size, moved, cancel)
+                else:
+                    with part.open("wb") as out:
+                        ftp.retrbinary(f"RETR {item.remote}", lambda d, o=out: block(d, o), BLOCK_SIZE)
                 part.replace(target)
                 on_done(index, item, status, str(target) if status is Status.COPY else "")
                 counts[status] += 1
-            except _Cancelled:
+            except (_Cancelled, sw2.Sw2Cancelled):
+                cancel.set()  # Cancel all on the console stops the batch too.
                 _drop(part)
                 ftp = _fresh(conn, ftp)
                 on_done(index, item, Status.CANCELLED, "")
                 counts[Status.CANCELLED] += 1
-            except (OSError, EOFError, ftplib.Error) as e:  # EOFError: the server closed mid-file.
+            except (OSError, EOFError, ftplib.Error, sw2.Sw2Error) as e:  # EOFError: the server closed mid-file.
                 _drop(part)
                 on_done(index, item, Status.FAILED, str(e))
                 counts[Status.FAILED] += 1
                 ftp = _fresh(conn, ftp)
     finally:
-        try:
-            ftp.quit()
-        except ftplib.all_errors:
-            ftp.close()
+        _close(ftp)  # After a lost connection ftp may be closed already.
+        if fast:
+            fast.close()
     return counts
+
+
+def _check_room(item: DownloadItem, size: int, part: Path) -> None:
+    """The same limits as over FTP, known before anything comes: no more than the
+    listing said (and 1 MB), and enough free disk for a file of unknown size."""
+    if item.size and size > item.size + SIZE_SLACK:
+        raise OSError("The server sent more than the file's size.")
+    if not item.size and shutil.disk_usage(part.parent).free - size < MIN_FREE_BYTES:
+        raise OSError("The disk is nearly full.")
 
 
 class _Cancelled(Exception):
