@@ -80,3 +80,6 @@ the files you choose, to a server you run. See [LICENSE](LICENSE).
 ## License
 
 MIT. Copyright (c) 2026 Mizuiro.
+
+`KaiDrop.exe` includes Python, Tcl/Tk, tkinterdnd2 and TkDND, each under its
+own license: see [third_party/](third_party/).

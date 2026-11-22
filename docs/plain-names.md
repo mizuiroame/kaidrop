@@ -57,8 +57,9 @@ songs have there:
   KaiDrop checks it's on the console. An entry whose song isn't on the
   console, or not on this computer, is left as it was;
 - `#EXTM3U`, `#EXTINF` and other comment lines, the line endings and the
-  encoding stay as they were (`.m3u8` is UTF-8; `.m3u` the Windows code
-  page, or UTF-8). New paths use `/`.
+  encoding stay as they were (`.m3u8` is UTF-8; `.m3u` and `.pls` the
+  Windows code page, or UTF-8). New paths use `/`;
+- a playlist over 4 MB is sent as it is.
 
 This works with the songs and playlists laid out on the console as on the
 computer (a playlist in `Music\Playlists` with songs in `Music\Artist`).

@@ -39,3 +39,7 @@ powershell -File build.ps1                         # builds dist/KaiDrop.exe
 | `kaidrop/logview.py` | The Log tab |
 | `kaidrop/icons.py` | The file panes' icons |
 | `kaidrop/settings.py` | Remembers the address and folders (never the password) |
+| `third_party/` | The licenses of what `KaiDrop.exe` includes: Python, Tcl/Tk, tkinterdnd2, TkDND |
+
+The version is in one place, `kaidrop/__init__.py`: the window's title and
+`pyproject.toml` take it from there.

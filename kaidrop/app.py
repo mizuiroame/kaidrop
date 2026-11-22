@@ -276,7 +276,8 @@ class KaiDrop(_Root):
             rows.append(iid)
             text = str(Path(*item.local.parts[-2:]))
             if item.playlist_changes:  # Its copy will point to the songs' names on the console.
-                text += f"  (playlist: {item.playlist_changes} entries renamed)"
+                count = item.playlist_changes
+                text += f"  (playlist: {count} {'entry' if count == 1 else 'entries'} renamed)"
             self.queue.insert("", "end", iid=iid, text=text,
                               values=(item.remote, human_size(item.size), "Waiting"),
                               tags=("renamed",) if item.renamed or item.playlist_changes else ())
