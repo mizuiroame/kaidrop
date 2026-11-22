@@ -1,3 +1,3 @@
 """KaiDrop: send music to a Switch 2 over FTP, with names the console can list."""
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
