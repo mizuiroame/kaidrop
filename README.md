@@ -68,6 +68,8 @@ python -m kaidrop
   receiving, the Transfers and Log tabs, reconnecting
 - [For developers](docs/developers.md): tests, building the .exe, what each
   file does
+- [Security](SECURITY.md): plain FTP, what's kept, checking the download,
+  and how to report a problem
 
 ## Legal notice
 
