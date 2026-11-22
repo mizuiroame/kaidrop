@@ -46,31 +46,50 @@ def sort_entries(entries: list[RemoteEntry]) -> list[RemoteEntry]:
     return sorted(entries, key=lambda e: (not e.is_dir, e.name.lower()))
 
 
+MAX_DEPTH = 32  # Folders inside folders, at most, when a whole tree is walked.
+
+
+class TooDeep(ftplib.Error):
+    """A folder tree deeper than MAX_DEPTH: the server's listing can't be right."""
+
+
+def usable_name(name: str) -> bool:
+    """False for names an entry can't have: empty, "." or "..", or with a
+    slash. A listing that holds them would make a walk go up or loop."""
+    return bool(name) and name not in (".", "..") and "/" not in name and "\\" not in name
+
+
 def list_dir(ftp: ftplib.FTP, path: str) -> list[RemoteEntry]:
     """The folder's entries, with MLSD when the server has it, else LIST."""
     try:
         entries = [RemoteEntry(name, facts.get("type") == "dir", int(facts.get("size", 0) or 0))
                    for name, facts in ftp.mlsd(path, facts=["type", "size"])
-                   if facts.get("type") in ("dir", "file")]
+                   if facts.get("type") in ("dir", "file") and usable_name(name)]
         return sort_entries(entries)
     except (ftplib.error_perm, ftplib.error_reply):
         pass
     lines: list[str] = []
     ftp.retrlines(f"LIST {path}", lines.append)
-    return sort_entries([e for e in (parse_list_line(line) for line in lines) if e])
+    return sort_entries([e for e in (parse_list_line(line) for line in lines) if e and usable_name(e.name)])
+
+
+def check_depth(depth: int) -> None:
+    if depth > MAX_DEPTH:
+        raise TooDeep(f"The folders go more than {MAX_DEPTH} levels deep.")
 
 
 def parent(path: str) -> str:
     return posixpath.dirname(path.rstrip("/")) or "/"
 
 
-def delete_tree(ftp: ftplib.FTP, path: str, is_dir: bool) -> None:
+def delete_tree(ftp: ftplib.FTP, path: str, is_dir: bool, depth: int = 0) -> None:
     """Deletes a file, or a folder with everything in it."""
     if not is_dir:
         ftp.delete(path)
         return
+    check_depth(depth)
     for entry in list_dir(ftp, path):
-        delete_tree(ftp, posixpath.join(path, entry.name), entry.is_dir)
+        delete_tree(ftp, posixpath.join(path, entry.name), entry.is_dir, depth + 1)
     ftp.rmd(path)
 
 

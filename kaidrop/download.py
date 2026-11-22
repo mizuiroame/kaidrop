@@ -1,11 +1,12 @@
 """Receiving from the server: what to download where, and the download itself.
-Files arrive as "name.part" and get their name when complete, so a stopped
+Files arrive as "name.kaidrop-part" and get their name when complete, so a stopped
 download never leaves a file that looks whole."""
 from __future__ import annotations
 
 import ftplib
 import posixpath
 import re
+import shutil
 import threading
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,22 +14,58 @@ from pathlib import Path
 from typing import Callable
 
 from .ftp import Choice, Connection, Status, _remote_time, connect, free_name
-from .remote import list_dir
+from .remote import check_depth, list_dir
 
 BLOCK_SIZE = 64 * 1024
-PART = ".part"
+# Its own ending, so a download never writes over a ".part" file of the user's.
+PART = ".kaidrop-part"
+# A server that sends more than it said it would is stopped this far past the size.
+SIZE_SLACK = 1024 * 1024
+# A file of unknown size stops when the disk gets this low, so it can't fill the disk.
+MIN_FREE_BYTES = 1024 ** 3
+FREE_CHECK_BYTES = 64 * 1024 * 1024  # How often (in bytes received) free space is looked at.
 
 # Characters Windows doesn't allow in a file name, and names it reserves.
 _BAD = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
-_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+# Characters that turn text around ("song‮exe.mp3" shows as "song3pm.exe"): dropped.
+_BIDI = re.compile("[‎‏‪-‮⁦-⁩]")
+_DIGITS = [str(i) for i in range(1, 10)] + ["¹", "²", "³"]  # Windows also reserves COM¹.
+_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{d}" for d in _DIGITS), *(f"LPT{d}" for d in _DIGITS)}
 
 
 def local_name(name: str) -> str:
     """A server's file name as this computer can save it: '?' and the like
-    as '_', no trailing dots or spaces, not a reserved name such as CON."""
-    clean = _BAD.sub("_", name).rstrip(" .") or "_"
-    stem = clean.split(".")[0].upper()
-    return "_" + clean if stem in _RESERVED else clean
+    as '_', no trailing dots or spaces, not a reserved name such as CON,
+    and never ending in KaiDrop's own ".kaidrop-part"."""
+    clean = _BAD.sub("_", _BIDI.sub("", name)).rstrip(" .") or "_"
+    stem = clean.split(".")[0].rstrip(" ").upper()
+    if stem in _RESERVED:
+        clean = "_" + clean
+    if clean.lower().endswith(PART):
+        clean = clean[: -len(PART)] + "_" + PART[1:]
+    return clean
+
+
+# Windows runs these when they are opened, instead of showing them.
+_RUNS_CODE = {
+    "exe", "com", "scr", "pif", "bat", "cmd", "ps1", "psm1", "vbs", "vbe", "js", "jse", "wsf", "wsh", "hta",
+    "msi", "msp", "lnk", "url", "reg", "cpl", "jar", "py", "pyw", "appref-ms", "application", "msc", "inf",
+}
+
+
+def runs_code(name: str) -> bool:
+    """True when opening a file of this name runs it (a program, script or shortcut)."""
+    stem, dot, ext = name.rstrip(" .").rpartition(".")
+    return bool(dot) and ext.lower() in _RUNS_CODE
+
+
+def _unique(name: str, taken: set[str]) -> str:
+    """name, or "name (2)"… if another entry of the same folder already took
+    it here (Windows ignores case, and "a?" and "a_" both become "a_")."""
+    if name.lower() in taken:
+        name = free_name(name, lambda n: n.lower() in taken)
+    taken.add(name.lower())
+    return name
 
 
 @dataclass(frozen=True)
@@ -54,12 +91,15 @@ def plan_download(ftp: ftplib.FTP, sources: list[tuple[str, bool]], local_root: 
     items: list[DownloadItem] = []
     folders: list[Path] = []
 
-    def walk(remote: str, local: Path) -> None:
+    def walk(remote: str, local: Path, depth: int = 0) -> None:
+        check_depth(depth)
         folders.append(local)
+        taken: set[str] = set()
         for entry in list_dir(ftp, remote):
-            child_remote, child_local = posixpath.join(remote, entry.name), local / local_name(entry.name)
+            child_remote = posixpath.join(remote, entry.name)
+            child_local = local / _unique(local_name(entry.name), taken)
             if entry.is_dir:
-                walk(child_remote, child_local)
+                walk(child_remote, child_local, depth + 1)
             else:
                 items.append(DownloadItem(child_remote, child_local, entry.size))
 
@@ -147,13 +187,20 @@ def download(conn: Connection, plan: DownloadPlan, on_progress: ProgressFn, on_d
                     target, status = _free_local(target), Status.COPY
             part = target.with_name(target.name + PART)
             got = 0
+            next_free_check = FREE_CHECK_BYTES
 
             def block(data: bytes, out) -> None:
-                nonlocal got, total
+                nonlocal got, total, next_free_check
                 if cancel.is_set():
                     raise _Cancelled()
-                out.write(data)
                 got += len(data)
+                if item.size and got > item.size + SIZE_SLACK:
+                    raise OSError("The server sent more than the file's size.")
+                if not item.size and got >= next_free_check:
+                    next_free_check += FREE_CHECK_BYTES
+                    if shutil.disk_usage(part.parent).free < MIN_FREE_BYTES:
+                        raise OSError("The disk is nearly full.")
+                out.write(data)
                 total += len(data)
                 on_progress(index, item, got, total)
 
@@ -168,7 +215,7 @@ def download(conn: Connection, plan: DownloadPlan, on_progress: ProgressFn, on_d
                 ftp = _fresh(conn, ftp)
                 on_done(index, item, Status.CANCELLED, "")
                 counts[Status.CANCELLED] += 1
-            except (OSError, ftplib.Error) as e:
+            except (OSError, EOFError, ftplib.Error) as e:  # EOFError: the server closed mid-file.
                 _drop(part)
                 on_done(index, item, Status.FAILED, str(e))
                 counts[Status.FAILED] += 1

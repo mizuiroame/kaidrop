@@ -195,7 +195,7 @@ def upload(conn: Connection, plan: Plan, on_progress: ProgressFn, on_done: DoneF
                 ftp = _reconnect_and_delete(conn, ftp, part)
                 on_done(index, item, Status.CANCELLED, "")
                 counts[Status.CANCELLED] += 1
-            except (OSError, ftplib.Error) as e:
+            except (OSError, EOFError, ftplib.Error) as e:  # EOFError: the server closed mid-file.
                 on_done(index, item, Status.FAILED, str(e))
                 counts[Status.FAILED] += 1
                 ftp = _reconnect_and_delete(conn, ftp, part)

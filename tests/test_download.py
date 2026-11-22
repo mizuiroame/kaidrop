@@ -68,7 +68,7 @@ class DownloadTest(unittest.TestCase):
         counts, _ = self.run_download(plan)
         self.assertEqual(counts[Status.SENT], 3)
         self.assertEqual((self.here / "Album" / "01 Song.flac").read_bytes(), b"a" * 150_000)
-        self.assertEqual(list(self.here.rglob("*.part")), [])
+        self.assertEqual(list(self.here.rglob("*.kaidrop-part")), [])
 
         counts, _ = self.run_download(plan)  # Again: the same sizes are skipped.
         self.assertEqual(counts[Status.SKIPPED], 3)

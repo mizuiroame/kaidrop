@@ -10,6 +10,7 @@ from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
 from typing import Callable
 
+from .download import runs_code
 from .foldertree import FolderTree
 from .icons import ICONS
 from .names import ascii_name, folder_name, is_plain
@@ -395,6 +396,10 @@ class LocalPane(FilePane):
             self.open_child(name)
             return
         target = self.path / name
+        if runs_code(name) and not messagebox.askyesno(
+                "KaiDrop", f"“{name}” is a program or script: opening it runs it.\n\nOpen it anyway?",
+                icon="warning", default="no", parent=self):
+            return
         try:
             if sys.platform == "win32":
                 os.startfile(target)  # noqa: S606 (the user's own file, opened on purpose)

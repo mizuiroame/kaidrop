@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 from .ftp import free_name
-from .remote import list_dir
+from .remote import check_depth, list_dir
 
 Item = tuple[str, bool]  # Path on the server, and whether it's a folder.
 StepFn = Callable[[str], None]  # What's being done now, for the status line.
@@ -64,12 +64,13 @@ def _copy_file(ftp: ftplib.FTP, source: str, target: str, scratch: Path) -> None
     temp.unlink()
 
 
-def _copy_tree(ftp: ftplib.FTP, source: str, target: str, scratch: Path, on_step: StepFn) -> None:
+def _copy_tree(ftp: ftplib.FTP, source: str, target: str, scratch: Path, on_step: StepFn, depth: int = 0) -> None:
+    check_depth(depth)
     ftp.mkd(target)
     for entry in list_dir(ftp, source):
         child_source, child_target = posixpath.join(source, entry.name), posixpath.join(target, entry.name)
         if entry.is_dir:
-            _copy_tree(ftp, child_source, child_target, scratch, on_step)
+            _copy_tree(ftp, child_source, child_target, scratch, on_step, depth + 1)
         else:
             on_step(f"Copying {child_source}…")
             _copy_file(ftp, child_source, child_target, scratch)

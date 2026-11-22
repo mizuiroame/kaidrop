@@ -28,6 +28,8 @@ def load() -> Settings:
         data = json.loads(_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return Settings()
+    if not isinstance(data, dict):  # "[]" or "null" is valid JSON but not settings.
+        return Settings()
     defaults = Settings()
     return Settings(
         host=str(data.get("host", defaults.host)),

@@ -35,3 +35,10 @@ class SettingsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_json_that_isnt_settings_gives_the_defaults(self):
+        path = Path(self.tmp.name) / "KaiDrop" / "settings.json"
+        path.parent.mkdir()
+        for text in ("[]", "null", '"x"', "3"):
+            path.write_text(text, encoding="utf-8")
+            self.assertEqual(settings.load(), settings.Settings())
