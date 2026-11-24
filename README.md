@@ -1,5 +1,7 @@
 # KaiDrop
 
+<p align="center"><img src="docs/cover.png" alt="KaiDrop" width="100%"></p>
+
 A Windows app that **sends music (or anything) from your computer to a
 Switch 2 running kaiHEN, over FTP**, with file names the console can actually
 list. It looks like FileZilla: your computer on the left, the console on the
