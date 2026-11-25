@@ -40,13 +40,34 @@ def _katakana(text: str) -> str:
     return "".join(chr(ord(c) + 0x60) if 0x3041 <= ord(c) <= 0x3096 else c for c in text)
 
 
+def _is_kana(text: str) -> bool:
+    return all(0x3041 <= ord(c) <= 0x30FF for c in text)
+
+
+def _spelled(surface: str, lform: str, pron: str) -> str:
+    """How a word that doesn't change is spelled in kana. lForm is the
+    lemma's, which a spelling with kana may not follow: kana alone are read
+    as written (さよなら, filed under さようなら); kanji with kana as said when
+    the lemma's is another length (台どこ is ダイドコ, not ダイドコロ); kanji
+    alone as the lemma's."""
+    if _is_kana(surface):
+        return _katakana(surface)
+    if any(_is_kana(c) for c in surface) and len(lform) != len(pron):
+        return pron
+    return lform
+
+
 def _short(spelled: str, said: str) -> str:
     """The reading as spelled, without the kana that only lengthen a vowel
-    (where the pronunciation has ー), except イ (ei, ii stay as written)."""
+    (where the pronunciation has ー), except イ (ei, ii stay as written),
+    and with ハ, ヘ, ヲ as said (こんにちは -> konnichiwa)."""
     if len(spelled) != len(said):
         return spelled.replace("ー", "")
-    return "".join(c for c, p in zip(spelled, said)
+    return "".join(p if (c, p) in _AS_SAID else c for c, p in zip(spelled, said)
                    if c != "ー" and not (p == "ー" and c in "アウエオ"))
+
+
+_AS_SAID = {("ハ", "ワ"), ("ヘ", "エ"), ("ヲ", "オ")}
 
 
 def _kind(pos1: str, pos2: str, ctype: str) -> str:
@@ -66,9 +87,9 @@ def main(lex: Path) -> None:
             if (pos1 in _SKIP_POS or len(surface) > MAX_LENGTH or not all(map(_is_japanese, surface))
                     or all(0x30A1 <= ord(c) <= 0x30FF for c in surface)):
                 continue
-            # Words that don't change keep their spelling (センセイ, not センセー);
+            # Words that don't change keep their spelling (センセイ, not センセー, see _spelled);
             # particles and inflected forms are read as said (は is ワ).
-            reading = pron if pos1 == "助詞" or ctype != "*" else lform
+            reading = pron if pos1 == "助詞" or ctype != "*" else _spelled(surface, lform, pron)
             if not reading or reading == "*":
                 continue
             reading = _short(reading, pron)

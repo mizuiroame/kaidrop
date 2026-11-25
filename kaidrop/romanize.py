@@ -6,16 +6,16 @@
 - Cyrillic, Greek, Arabic, Hebrew, Thai and the other scripts with anyascii
   (Москва -> Moskva).
 
-Kanji alone could be Japanese or Chinese. They're read:
-1. as Japanese when the name, or a folder above it, has kana (ひらがな or
-   カタカナ): Chinese never uses them;
-2. otherwise as Chinese when the name or a folder above it has a character
-   Japanese doesn't write, as Chinese simplified ones (门, 爱, 东; Japanese
-   has 門, 愛, 東);
-3. otherwise as Japanese.
+Kanji alone could be Japanese or Chinese. The name, then each folder above
+it from the nearest one up, is looked at until one tells:
+- kana (ひらがな or カタカナ) say Japanese: Chinese never uses them;
+- a character Japanese doesn't write, as Chinese simplified ones (门, 爱,
+  东; Japanese has 門, 愛, 東), says Chinese.
+If none tells, kanji are Japanese.
 So 水色の雨.mp3 and 水色.mp3 are Japanese (Mizuiro), and so is 雨.mp3 in a
 folder called みずいろ; 我爱你.mp3, or 北京.mp3 in a folder called 中国音乐, is
-Chinese. Traditional Chinese with no simplified letter (周杰倫) is read as
+Chinese, even inside a folder called 音楽ライブラリ (the nearer one tells
+first). Traditional Chinese with no simplified letter (周杰倫) is read as
 Japanese.
 
 That's AUTO, the default. The "Kanji" setting can change it:
@@ -96,9 +96,12 @@ def kanji_are_japanese(name: str, where: str = "", kanji: str = AUTO) -> bool:
         return True
     if kanji == CHINESE:
         return False
-    if has_kana(where):
-        return True
-    return not any(japanese.is_kanji(c) and not japanese.uses(c) for c in name + where)
+    for part in [name, *reversed(re.split(r"[\\/]", where))]:  # The nearest folder first.
+        if has_kana(part):
+            return True
+        if any(japanese.is_kanji(c) and not japanese.uses(c) for c in part):
+            return False
+    return True
 
 
 def romanize(name: str, where: str = "", kanji: str = AUTO) -> str:

@@ -69,6 +69,12 @@ class JapaneseTest(unittest.TestCase):
         self.assertEqual(japanese.romanize("思う"), "Omou")    # Said as written: not a long vowel.
         self.assertEqual(japanese.romanize("君の名は"), "Kimi no Na wa")  # Particles as said.
 
+    def test_kana_spelling_not_the_lemma(self):
+        # UniDic files さよなら under さようなら: the kana written are read, not the lemma's.
+        self.assertEqual(japanese.romanize("さよなら"), "Sayonara")
+        self.assertEqual(japanese.romanize("さようなら"), "Sayonara")
+        self.assertEqual(japanese.romanize("こんにちは"), "Konnichiwa")  # は said wa.
+
     def test_simplified_chinese_isnt_japanese(self):
         self.assertTrue(japanese.uses("門"))
         self.assertFalse(japanese.uses("门"))
@@ -109,6 +115,14 @@ class RomanizeTest(unittest.TestCase):
         self.assertTrue(kanji_are_japanese("水色"))                # Nothing says Chinese.
         self.assertEqual(romanize("雨", "C:/中国音乐"), "Yu")
         self.assertEqual(romanize("雨"), "Ame")
+
+    def test_the_name_and_nearest_folder_say_first(self):
+        # A Chinese folder inside one with a Japanese name is still Chinese...
+        self.assertFalse(kanji_are_japanese("华语音乐", "C:/テスト音楽"))
+        self.assertFalse(kanji_are_japanese("月亮代表我的心", "C:/テスト音楽/华语音乐"))
+        self.assertEqual(romanize("01 我爱你.mp3", "C:/テスト音楽/华语音乐"), "01 Wo Ai Ni.mp3")
+        # ...and a Japanese folder inside a Chinese one is Japanese.
+        self.assertTrue(kanji_are_japanese("雨", r"C:\中国音乐\ひかり"))
 
     def test_kanji_setting(self):
         # Japanese: kanji are always Japanese, even next to a Chinese-only letter.
