@@ -68,9 +68,9 @@ An FTP server decides what its listings say, so KaiDrop doesn't trust them:
 ## The release
 
 - `KaiDrop.exe` is built with PyInstaller from this repository (see
-  [docs/developers.md](docs/developers.md)), without UPX. It isn't signed
-  yet, so Windows SmartScreen may warn the first time; the build is ready to
-  sign it once there's a certificate.
+  [docs/developers.md](docs/developers.md)), without UPX. It's unsigned, with
+  no plan to sign it for now, so Windows SmartScreen may warn the first time;
+  check the SHA-256 below instead.
 - Each release's notes give the file's SHA-256. Check it in PowerShell with
   `Get-FileHash KaiDrop.exe`.
 - The build's dependencies, and theirs, are pinned to exact versions with the

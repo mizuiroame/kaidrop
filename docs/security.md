@@ -32,8 +32,9 @@ what the server sends (listings and files are untrusted).
   a changed or swapped package on PyPI can't get in.
 - Not packed with UPX: packed programs look suspicious to antivirus
   programs, and it saves little.
-- Not signed yet, so Windows SmartScreen may warn the first time. The build
-  can sign it once there's a code-signing certificate
-  (see [For developers](developers.md#signing)).
+- **Unsigned**, with no plan to sign it for now, so Windows SmartScreen may
+  warn the first time ("More info", then "Run anyway"). Check the SHA-256
+  below instead. (The build could sign it, see
+  [For developers](developers.md#signing).)
 - Each release's notes give the file's SHA-256: check it in PowerShell with
   `Get-FileHash KaiDrop.exe`.

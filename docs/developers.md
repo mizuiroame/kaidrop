@@ -34,9 +34,11 @@ in, so they are skipped there (`CI` is set) and run only on a PC.
 
 ### Signing
 
-The .exe isn't signed yet. `build.ps1` signs it when `KAIDROP_SIGN_THUMBPRINT`
-holds the thumbprint of a code-signing certificate in your certificate store
-and `signtool.exe` (Windows SDK) is installed:
+The .exe is **unsigned**, and there's no plan to sign it for now (a
+code-signing certificate costs money every year). The build stays ready for
+it: `build.ps1` signs the .exe only when `KAIDROP_SIGN_THUMBPRINT` holds the
+thumbprint of a code-signing certificate in your certificate store and
+`signtool.exe` (Windows SDK) is installed:
 
 ```
 $env:KAIDROP_SIGN_THUMBPRINT = "<the certificate's thumbprint>"
@@ -46,11 +48,7 @@ powershell -File build.ps1
 It signs with SHA-256 and an RFC 3161 timestamp (`KAIDROP_SIGN_TIMESTAMP`
 changes the server; DigiCert's by default), so the signature stays valid
 after the certificate expires, then checks it with `signtool verify /pa`.
-Options for a certificate: an OV or EV certificate from a certificate
-authority (paid, yearly), Azure Trusted Signing (paid, monthly, for
-individuals in some countries), or SignPath's free plan for open-source
-projects (signing then runs in their CI, not here). A self-made certificate
-doesn't help: Windows doesn't trust it.
+A self-made certificate doesn't help: Windows doesn't trust it.
 
 ## The files
 
