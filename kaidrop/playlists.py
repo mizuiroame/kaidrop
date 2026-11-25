@@ -27,6 +27,7 @@ from typing import Callable
 from urllib.parse import unquote, urlparse
 
 from .names import unique_names
+from .romanize import AUTO
 
 EXTENSIONS = (".m3u", ".m3u8", ".pls")
 MAX_BYTES = 4 << 20  # Bigger ones aren't playlists anyone wrote by hand: sent as they are.
@@ -116,8 +117,9 @@ class _Names:
     """The names the files in a local folder get on the console, as plan.py
     gives them, looked up without regard to case."""
 
-    def __init__(self, plain: bool) -> None:
+    def __init__(self, plain: bool, kanji: str) -> None:
         self.plain = plain
+        self.kanji = kanji
         self.folders: dict[str, dict[str, str]] = {}
 
     def get(self, folder: Path, name: str) -> str | None:
@@ -128,7 +130,7 @@ class _Names:
             except OSError:
                 entries = []
             names = unique_names([e.name for e in entries], {e.name for e in entries if e.is_dir()}, self.plain,
-                                 str(folder))
+                                 str(folder), self.kanji)
             self.folders[key] = {local.lower(): remote for local, remote in names.items()}
         return self.folders[key].get(name.lower())
 
@@ -174,9 +176,11 @@ def _same(a: str, b: str) -> bool:
     return posixpath.normpath(a.replace("\\", "/")) == posixpath.normpath(b)
 
 
-def prepare(local: Path, remote: str, sent: dict[str, str], plain: bool = True) -> PlaylistCopy | None:
+def prepare(local: Path, remote: str, sent: dict[str, str], plain: bool = True,
+            kanji: str = AUTO) -> PlaylistCopy | None:
     """Works out the console copy of the playlist at local, going to remote.
     sent maps each file in the transfer (by local_key) to its path on the console.
+    kanji: how kanji are read (see romanize.py), as plan.py read them.
     None when nothing in it needs changing, or it can't be read."""
     try:
         if local.stat().st_size > MAX_BYTES:
@@ -188,7 +192,7 @@ def prepare(local: Path, remote: str, sent: dict[str, str], plain: bool = True) 
     data = data[len(bom):]
     encoding = _encoding(local, data, bool(bom))
     folder, remote_folder = local.parent, posixpath.dirname(remote) or "/"
-    names = _Names(plain)
+    names = _Names(plain, kanji)
     lines = tuple(data.splitlines(keepends=True))
     changes: list[Change] = []
     outside = 0

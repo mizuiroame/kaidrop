@@ -1,7 +1,7 @@
 import unittest
 
 from kaidrop import hangul, japanese, kana
-from kaidrop.romanize import kanji_are_japanese, romanize
+from kaidrop.romanize import AUTO, CHINESE, JAPANESE, kanji_are_japanese, romanize
 
 
 class KanaTest(unittest.TestCase):
@@ -17,7 +17,8 @@ class KanaTest(unittest.TestCase):
         self.assertEqual(kana.romanize("マッ"), "mat")  # Joins the next word: mat+te.
 
     def test_long_mark_and_n(self):
-        self.assertEqual(kana.romanize("コーヒー"), "koohii")
+        self.assertEqual(kana.romanize("コーヒー"), "kohi")  # Long vowels short, as plain Hepburn.
+        self.assertEqual(kana.romanize("スーパー"), "supa")
         self.assertEqual(kana.romanize("けんいち"), "ken'ichi")
         self.assertEqual(kana.romanize("さんぽ"), "sanpo")
 
@@ -57,7 +58,16 @@ class JapaneseTest(unittest.TestCase):
         self.assertEqual(japanese.romanize("街で君を想う"), "Machi de Kimi o Omou")
 
     def test_katakana_word(self):
-        self.assertEqual(japanese.romanize("東京タワー"), "Toukyou Tawaa")
+        self.assertEqual(japanese.romanize("東京タワー"), "Tokyo Tawa")
+
+    def test_long_vowels_short(self):
+        self.assertEqual(japanese.romanize("東京"), "Tokyo")
+        self.assertEqual(japanese.romanize("大阪"), "Osaka")
+        self.assertEqual(japanese.romanize("京都"), "Kyoto")
+        self.assertEqual(japanese.romanize("ありがとう"), "Arigato")
+        self.assertEqual(japanese.romanize("先生"), "Sensei")  # ei stays, as plain Hepburn writes it.
+        self.assertEqual(japanese.romanize("思う"), "Omou")    # Said as written: not a long vowel.
+        self.assertEqual(japanese.romanize("君の名は"), "Kimi no Na wa")  # Particles as said.
 
     def test_simplified_chinese_isnt_japanese(self):
         self.assertTrue(japanese.uses("門"))
@@ -85,7 +95,7 @@ class RomanizeTest(unittest.TestCase):
 
     def test_spaces_next_to_latin_letters(self):
         self.assertEqual(romanize("01 水色Remix.mp3"), "01 Mizuiro Remix.mp3")
-        self.assertEqual(romanize("さくら（独唱）"), "Sakura (Dokushou)")
+        self.assertEqual(romanize("さくら（独唱）"), "Sakura (Dokusho)")
 
     def test_full_and_half_width(self):
         self.assertEqual(romanize("ＡＢＣ"), "ABC")
@@ -99,6 +109,18 @@ class RomanizeTest(unittest.TestCase):
         self.assertTrue(kanji_are_japanese("水色"))                # Nothing says Chinese.
         self.assertEqual(romanize("雨", "C:/中国音乐"), "Yu")
         self.assertEqual(romanize("雨"), "Ame")
+
+    def test_kanji_setting(self):
+        # Japanese: kanji are always Japanese, even next to a Chinese-only letter.
+        self.assertEqual(romanize("北京", "C:/中国音乐", JAPANESE), "Pekin")
+        self.assertTrue(kanji_are_japanese("我爱你", "", JAPANESE))
+        # Chinese: kanji are Chinese, even under a folder with kana...
+        self.assertEqual(romanize("水色", "C:/みずいろ", CHINESE), "Shui Se")
+        self.assertEqual(romanize("北京", "", CHINESE), "Beijing")
+        # ...but a name with kana is Japanese whatever the setting.
+        self.assertEqual(romanize("水色の雨", "", CHINESE), "Mizuiro no Ame")
+        # Automatic is the rule above.
+        self.assertEqual(romanize("北京", "", AUTO), romanize("北京"))
 
 
 if __name__ == "__main__":

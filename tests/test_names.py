@@ -16,7 +16,7 @@ class NamesTest(unittest.TestCase):
     def test_other_alphabets_in_latin_letters(self):
         self.assertEqual(ascii_name("04 みずいろの空.mp3"), "04 Mizuiro no Sora.mp3")
         self.assertEqual(ascii_name("水色.mp3"), "Mizuiro.mp3")
-        self.assertEqual(folder_name("東京"), "Toukyou")
+        self.assertEqual(folder_name("東京"), "Tokyo")
         self.assertEqual(folder_name("Москва"), "Moskva")
 
     def test_unreadable_names(self):

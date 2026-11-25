@@ -14,6 +14,7 @@ from .download import runs_code
 from .foldertree import FolderTree
 from .icons import ICONS
 from .names import ascii_name, folder_name, is_plain
+from .romanize import AUTO
 from .places import file_icon
 from .remote import RemoteEntry, RemoteSession, delete_tree, list_dir, parent
 from .serverops import Item, copy_items, move_items
@@ -434,8 +435,10 @@ class RemotePane(FilePane):
     """The server's folders. Every network call goes through the session."""
 
     def __init__(self, master: tk.Misc, start: str, on_status: Callable[[str], None],
-                 plain_names: Callable[[], bool], on_download: Callable[[], None]) -> None:
+                 plain_names: Callable[[], bool], on_download: Callable[[], None],
+                 kanji: Callable[[], str] = lambda: AUTO) -> None:
         self.on_download = on_download
+        self.kanji = kanji
         super().__init__(master, "Server (the console)")
         ttk.Button(self.tools, text="New folder", command=self._new_folder).pack(side="left", padx=(4, 0))
         ttk.Button(self.tools, text="Delete", command=self._delete).pack(side="left", padx=(4, 0))
@@ -514,7 +517,7 @@ class RemotePane(FilePane):
         """With plain names on, a name the Switch 2 can list (it hides the others)."""
         if not self.plain_names() or is_plain(name):
             return name
-        plain = folder_name(name) if is_dir else ascii_name(name)
+        plain = folder_name(name, kanji=self.kanji()) if is_dir else ascii_name(name, kanji=self.kanji())
         self.on_status(f"“{name}” would be hidden on Switch 2: named “{plain}” instead.")
         return plain
 

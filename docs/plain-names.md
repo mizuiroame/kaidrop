@@ -53,10 +53,12 @@ on the console get the new names.
 list of half a million Japanese words and their readings, made from
 [UniDic](https://clrd.ninjal.ac.jp/unidic/). Words start with a capital;
 particles are in lower case, as said (`は` → `wa`, `を` → `o`); endings
-join their word (`書いた` → `Kaita`, `待って` → `Matte`). Kana are written as
-spelled, and the long mark `ー` repeats its vowel: `東京` → `Toukyou`,
-`コーヒー` → `Koohii`. It's right for most names, but it doesn't understand
-the sentence, so now and then a word gets another of its readings.
+join their word (`書いた` → `Kaita`, `待って` → `Matte`). Long vowels are
+short, as plain Hepburn writes them without macrons: `東京` → `Tokyo`,
+`大阪` → `Osaka`, `コーヒー` → `Kohi`; `ei` stays (`先生` → `Sensei`), and so
+does a vowel that's said twice (`思う` → `Omou`). It's right for most names,
+but it doesn't understand the sentence, so now and then a word gets another
+of its readings.
 
 **Chinese.** Pinyin with [pypinyin](https://github.com/mozillazg/python-pinyin),
 a word at a time (`重庆` → `Chongqing`), without tone marks; `ü` is `u`.
@@ -81,6 +83,19 @@ Kanji alone can be either. KaiDrop decides for each name:
 3. **Otherwise Japanese**: `水色.mp3` is `Mizuiro.mp3`. Traditional Chinese
    with no simplified character, such as Taiwan's or Hong Kong's, is read as
    Japanese too.
+
+That's **Kanji: Automatic**, the default. The list next to **Plain names for
+Switch 2** changes it, and KaiDrop remembers the choice:
+
+| Kanji | Reads kanji as | `北京.mp3` | `水色.mp3` in a folder `みずいろ` | `水色の雨.mp3` |
+|-------|----------------|------------|-----------------------------------|----------------|
+| Automatic | the rules above | `Pekin.mp3` | `Mizuiro.mp3` | `Mizuiro no Ame.mp3` |
+| Japanese | Japanese, always | `Pekin.mp3` | `Mizuiro.mp3` | `Mizuiro no Ame.mp3` |
+| Chinese | Chinese, unless the name itself has kana | `Beijing.mp3` | `Shui Se.mp3` | `Mizuiro no Ame.mp3` |
+
+Choose **Chinese** for a Chinese collection without simplified characters
+(Taiwan's, Hong Kong's), and **Japanese** for a Japanese one where a folder
+name happens to look Chinese. A name with kana is always Japanese.
 
 Before sending, KaiDrop shows each file's name on your computer and on the
 console (renamed ones in color). With plain names on, folders made or renamed

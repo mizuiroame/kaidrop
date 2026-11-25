@@ -17,6 +17,11 @@ So 水色の雨.mp3 and 水色.mp3 are Japanese (Mizuiro), and so is 雨.mp3 in 
 folder called みずいろ; 我爱你.mp3, or 北京.mp3 in a folder called 中国音乐, is
 Chinese. Traditional Chinese with no simplified letter (周杰倫) is read as
 Japanese.
+
+That's AUTO, the default. The "Kanji" setting can change it:
+- JAPANESE: kanji are always Japanese;
+- CHINESE: kanji are Chinese, unless the name itself has kana (then it's
+  Japanese for sure).
 """
 from __future__ import annotations
 
@@ -25,6 +30,10 @@ import unicodedata
 
 from . import hangul, japanese
 from .kana import is_kana
+
+# How kanji are read (the "Kanji" setting).
+AUTO, JAPANESE, CHINESE = "auto", "japanese", "chinese"
+KANJI_MODES = (AUTO, JAPANESE, CHINESE)
 
 # Punctuation used with Chinese and Japanese, with a plain look-alike.
 _CJK_PUNCTUATION = str.maketrans({
@@ -81,20 +90,25 @@ def has_kana(text: str) -> bool:
     return any(is_kana(c) for c in text)
 
 
-def kanji_are_japanese(name: str, where: str = "") -> bool:
-    """How the kanji in a name are read (see the rule above)."""
-    if has_kana(name) or has_kana(where):
+def kanji_are_japanese(name: str, where: str = "", kanji: str = AUTO) -> bool:
+    """How the kanji in a name are read (see the rules above)."""
+    if kanji == JAPANESE or has_kana(name):
+        return True
+    if kanji == CHINESE:
+        return False
+    if has_kana(where):
         return True
     return not any(japanese.is_kanji(c) and not japanese.uses(c) for c in name + where)
 
 
-def romanize(name: str, where: str = "") -> str:
+def romanize(name: str, where: str = "", kanji: str = AUTO) -> str:
     """name with its letters in Latin letters (accents are left for names.py).
-    where: the folder it's in, which tells Japanese kanji from Chinese."""
+    where: the folder it's in, which tells Japanese kanji from Chinese;
+    kanji: AUTO, JAPANESE or CHINESE (see above)."""
     if name.isascii():
         return name
     text = unicodedata.normalize("NFKC", name).translate(_CJK_PUNCTUATION)
-    kanji_japanese = kanji_are_japanese(text, unicodedata.normalize("NFKC", where))
+    kanji_japanese = kanji_are_japanese(text, unicodedata.normalize("NFKC", where), kanji)
     out: list[str] = []
     i = 0
     while i < len(text):

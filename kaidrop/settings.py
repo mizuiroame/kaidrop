@@ -7,6 +7,8 @@ import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from .romanize import AUTO, KANJI_MODES
+
 
 @dataclass
 class Settings:
@@ -16,6 +18,7 @@ class Settings:
     remote_folder: str = "/"
     plain_names: bool = True
     local_folder: str = ""
+    kanji: str = AUTO  # How kanji are read in plain names: auto, japanese or chinese.
 
 
 def _path() -> Path:
@@ -31,6 +34,7 @@ def load() -> Settings:
     if not isinstance(data, dict):  # "[]" or "null" is valid JSON but not settings.
         return Settings()
     defaults = Settings()
+    kanji = data.get("kanji", defaults.kanji)
     return Settings(
         host=str(data.get("host", defaults.host)),
         port=str(data.get("port", defaults.port)),
@@ -38,6 +42,7 @@ def load() -> Settings:
         remote_folder=str(data.get("remote_folder", defaults.remote_folder)),
         plain_names=bool(data.get("plain_names", defaults.plain_names)),
         local_folder=str(data.get("local_folder", defaults.local_folder)),
+        kanji=kanji if kanji in KANJI_MODES else defaults.kanji,
     )
 
 

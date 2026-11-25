@@ -1,4 +1,4 @@
-"""Makes kaidrop/data/readings-ja.xz, the Japanese readings romaji.py uses,
+"""Makes kaidrop/data/readings-ja.xz, the Japanese readings japanese.py uses,
 from UniDic's lexicon (UniDic 2.1.2 for MeCab, BSD licence option).
 
 Get unidic-mecab-2.1.2_src.zip from
@@ -8,7 +8,10 @@ https://clrd.ninjal.ac.jp/unidic_archive/cwj/2.1.2/ and pass its lex.csv:
 
 Each line of the output is "surface<TAB>reading<TAB>cost<TAB>kind", one per
 written form and kind (the most common reading, the one with the lowest cost):
-- reading: in katakana, left empty when it's the surface itself in katakana;
+- reading: in katakana, left empty when it's the surface itself in katakana,
+  with long vowels short, as plain Hepburn writes them without macrons:
+  トウキョウ (said トーキョー) is トキョ (Tokyo), オオサカ is オサカ (Osaka), but
+  センセイ stays (sensei) and オモウ, said as written, too (omou);
 - cost: UniDic's word cost (lower is more common);
 - kind: P a particle (a word of its own, in lower case), A an ending that
   joins the word before it (書い+た -> kaita), I a verb or adjective in one
@@ -37,6 +40,15 @@ def _katakana(text: str) -> str:
     return "".join(chr(ord(c) + 0x60) if 0x3041 <= ord(c) <= 0x3096 else c for c in text)
 
 
+def _short(spelled: str, said: str) -> str:
+    """The reading as spelled, without the kana that only lengthen a vowel
+    (where the pronunciation has ー), except イ (ei, ii stay as written)."""
+    if len(spelled) != len(said):
+        return spelled.replace("ー", "")
+    return "".join(c for c, p in zip(spelled, said)
+                   if c != "ー" and not (p == "ー" and c in "アウエオ"))
+
+
 def _kind(pos1: str, pos2: str, ctype: str) -> str:
     if pos1 == "助詞":
         return "A" if pos2 == "接続助詞" else "P"
@@ -59,6 +71,7 @@ def main(lex: Path) -> None:
             reading = pron if pos1 == "助詞" or ctype != "*" else lform
             if not reading or reading == "*":
                 continue
+            reading = _short(reading, pron)
             key = (surface, _kind(pos1, pos2, ctype))
             if key not in best or cost < best[key][0]:
                 best[key] = (cost, reading)

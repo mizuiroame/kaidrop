@@ -1,7 +1,9 @@
-"""Kana in Latin letters (Hepburn): しゃしん -> shashin, コーヒー -> koohii.
+"""Kana in Latin letters (Hepburn): しゃしん -> shashin, コーヒー -> kohi.
 
-The long-vowel mark ー repeats the vowel before it, and kana are written as
-they're spelled (とうきょう -> toukyou), so no accents are needed.
+Long vowels are short, as plain Hepburn writes them without macrons: the
+long-vowel mark ー is left out. Kana spelled out (トウキョウ) are written as
+they are; japanese.py's readings already leave out the ones that only
+lengthen a vowel (東京 is read トキョ, Tokyo).
 """
 from __future__ import annotations
 
@@ -68,9 +70,7 @@ def romanize(text: str) -> str:
             double = True
             continue
         if c == _LONG:
-            vowel = next((ch for ch in reversed(syllables[-1][1]) if ch in "aiueo"), "") if syllables else ""
-            syllables.append((c, vowel))
-            continue
+            continue  # Long vowels are written short.
         if (c in _SMALL_Y or c in _SMALL_VOWELS) and syllables and syllables[-1][0] in _BASE:
             kana, prev = syllables.pop()
             syllables.append((kana, _small(prev, c)))

@@ -33,6 +33,9 @@ except ImportError:
     _Root = tk.Tk
 
 POLL_MS = 60
+# The Kanji setting: how kanji with no kana or Chinese-only letter near them are read.
+KANJI_LABELS = {romanize.AUTO: "Kanji: Automatic", romanize.JAPANESE: "Kanji: Japanese",
+                romanize.CHINESE: "Kanji: Chinese"}
 RATE_EVERY_S = 0.25  # How often the speed and time left are redrawn.
 EXPLANATION = ("Switch 2 hides files and folders whose names have accents (á, ñ…) or other non-ASCII "
                "characters: they are saved, but no app on the console can see them. With plain names on, the "
@@ -90,13 +93,17 @@ class KaiDrop(_Root):
         self.link = ttk.Label(conn, text="● Not connected", foreground="#888")
         self.link.pack(side="left", padx=(10, 0))
         self.plain = tk.BooleanVar(value=self.saved.plain_names)
-        ttk.Checkbutton(conn, text="Plain names for Switch 2", variable=self.plain).pack(side="right")
+        self.kanji = tk.StringVar(value=KANJI_LABELS[self.saved.kanji])
+        ttk.Combobox(conn, textvariable=self.kanji, values=list(KANJI_LABELS.values()), state="readonly",
+                     width=17).pack(side="right")
+        ttk.Checkbutton(conn, text="Plain names for Switch 2", variable=self.plain).pack(side="right", padx=(0, 8))
         ttk.Label(self, text=EXPLANATION, wraplength=1140, foreground="#666").pack(fill="x", padx=12)
 
         panes = ttk.PanedWindow(self, orient="horizontal")
         self.local = LocalPane(panes, self.saved.local_folder, self._send_selected)
         # The server opens at its root.
-        self.remote = RemotePane(panes, "/", self._set_status, self.plain.get, self._download_selected)
+        self.remote = RemotePane(panes, "/", self._set_status, self.plain.get, self._download_selected,
+                                 self._kanji_mode)
         panes.add(self.local, weight=1)
         panes.add(self.remote, weight=1)
 
@@ -203,9 +210,15 @@ class KaiDrop(_Root):
         else:
             self._set_status(message)
 
+    def _kanji_mode(self) -> str:
+        """The Kanji setting: how kanji with nothing else to tell are read."""
+        chosen = self.kanji.get()
+        return next((mode for mode, label in KANJI_LABELS.items() if label == chosen), romanize.AUTO)
+
     def _remember(self) -> None:
         settings.save(settings.Settings(self.host.get().strip(), self.port.get().strip(), self.user.get().strip(),
-                                        self.remote.path, self.plain.get(), str(self.local.path)))
+                                        self.remote.path, self.plain.get(), str(self.local.path),
+                                        self._kanji_mode()))
 
     # --- Choosing what to send ---
 
@@ -268,7 +281,7 @@ class KaiDrop(_Root):
         if not self.session or not self.conn:
             messagebox.showinfo("KaiDrop", "Connect to the server first.")
             return
-        plan = build_plan(sources, folder, self.plain.get())
+        plan = build_plan(sources, folder, self.plain.get(), self._kanji_mode())
         if not plan.items:
             self._set_status("Nothing to send there (empty folders?).")
             return
