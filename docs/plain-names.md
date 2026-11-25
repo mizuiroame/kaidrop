@@ -61,7 +61,10 @@ but it doesn't understand the sentence, so now and then a word gets another
 of its readings.
 
 **Chinese.** Pinyin with [pypinyin](https://github.com/mozillazg/python-pinyin),
-a word at a time (`重庆` → `Chongqing`), without tone marks; `ü` is `u`.
+without tone marks (`ü` is `u`), a word at a time, as pinyin is written: the
+name is split into words with [jieba](https://github.com/fxsjy/jieba), so
+`北京欢迎你` → `Beijing Huanying Ni`, `月亮代表我的心` → `Yueliang Daibiao Wo
+De Xin`, `汉字` → `Hanzi`, `重庆` → `Chongqing`.
 
 **Korean.** Each syllable's letters, with the Revised Romanization's rules
 for the letters that meet between syllables (`국물` → `Gungmul`, `신라` →
@@ -91,7 +94,7 @@ Switch 2** changes it, and KaiDrop remembers the choice:
 |-------|----------------|------------|-----------------------------------|----------------|
 | Automatic | the rules above | `Pekin.mp3` | `Mizuiro.mp3` | `Mizuiro no Ame.mp3` |
 | Japanese | Japanese, always | `Pekin.mp3` | `Mizuiro.mp3` | `Mizuiro no Ame.mp3` |
-| Chinese | Chinese, unless the name itself has kana | `Beijing.mp3` | `Shui Se.mp3` | `Mizuiro no Ame.mp3` |
+| Chinese | Chinese, unless the name itself has kana | `Beijing.mp3` | `Shuise.mp3` | `Mizuiro no Ame.mp3` |
 
 Choose **Chinese** for a Chinese collection without simplified characters
 (Taiwan's, Hong Kong's), and **Japanese** for a Japanese one where a folder
@@ -121,6 +124,11 @@ songs have there:
 - `#EXTM3U`, `#EXTINF` and other comment lines, the line endings and the
   encoding stay as they were (`.m3u8` is UTF-8; `.m3u` and `.pls` the
   Windows code page, or UTF-8). New paths use `/`;
+- an `.m3u` or `.m3u8` whose own name gets a plain one keeps its name
+  inside, in a `#PLAYLIST:` line after `#EXTM3U` (UTF-8, up to 48
+  characters): `北京欢迎你.m3u8` goes as `Beijing Huanying Ni.m3u8`, and
+  KaiPlayer still calls it `北京欢迎你`. A `#PLAYLIST:` line it already has
+  is kept;
 - a playlist over 4 MB is sent as it is.
 
 This works with the songs and playlists laid out on the console as on the

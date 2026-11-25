@@ -45,7 +45,7 @@ class PlanTest(unittest.TestCase):
         album.mkdir()
         (album / "雨.mp3").write_bytes(b"r")
         (album / "list.m3u8").write_bytes("雨.mp3\n".encode("utf-8"))
-        for kanji, folder, song in (("auto", "Mizuiro", "Ame"), ("chinese", "Shui Se", "Yu")):
+        for kanji, folder, song in (("auto", "Mizuiro", "Ame"), ("chinese", "Shuise", "Yu")):
             plan = build_plan([album], "/Music", kanji=kanji)
             remotes = {item.local.name: item.remote for item in plan.items}
             self.assertEqual(remotes["雨.mp3"], f"/Music/{folder}/{song}.mp3")

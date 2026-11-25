@@ -88,6 +88,19 @@ class RomanizeTest(unittest.TestCase):
         self.assertEqual(romanize("我爱北京"), "Wo Ai Beijing")
         self.assertEqual(romanize("重庆"), "Chongqing")  # By the word, not 'zhong'.
 
+    def test_chinese_syllables_joined_by_the_word(self):
+        self.assertEqual(romanize("北京欢迎你"), "Beijing Huanying Ni")
+        self.assertEqual(romanize("月亮代表", kanji=CHINESE), "Yueliang Daibiao")  # Auto reads it as Japanese.
+        self.assertEqual(romanize("汉字", kanji=CHINESE), "Hanzi")
+        self.assertEqual(romanize("月亮代表我的心.mp3", kanji=CHINESE), "Yueliang Daibiao Wo De Xin.mp3")
+        self.assertEqual(romanize("我爱你"), "Wo Ai Ni")  # Not one set phrase (Woaini).
+        self.assertEqual(romanize("01 后会无期 (Live).flac", kanji=CHINESE), "01 Houhui Wuqi (Live).flac")
+
+    def test_chinese_word_list_is_bundled(self):
+        from kaidrop import chinese
+        self.assertTrue(chinese.DATA.is_file())
+        self.assertEqual(chinese.words("北京欢迎你"), ["北京", "欢迎", "你"])
+
     def test_korean(self):
         self.assertEqual(romanize("한국 노래.mp3"), "Hanguk Norae.mp3")
 
@@ -129,7 +142,7 @@ class RomanizeTest(unittest.TestCase):
         self.assertEqual(romanize("北京", "C:/中国音乐", JAPANESE), "Pekin")
         self.assertTrue(kanji_are_japanese("我爱你", "", JAPANESE))
         # Chinese: kanji are Chinese, even under a folder with kana...
-        self.assertEqual(romanize("水色", "C:/みずいろ", CHINESE), "Shui Se")
+        self.assertEqual(romanize("水色", "C:/みずいろ", CHINESE), "Shuise")  # 水色 is one word.
         self.assertEqual(romanize("北京", "", CHINESE), "Beijing")
         # ...but a name with kana is Japanese whatever the setting.
         self.assertEqual(romanize("水色の雨", "", CHINESE), "Mizuiro no Ame")

@@ -10,9 +10,14 @@ $ErrorActionPreference = "Stop"
 if (-not $Python) { $Python = if (Test-Path .venv/Scripts/python.exe) { ".venv/Scripts/python.exe" } else { "python" } }
 
 # No UPX (--noupx): packed files look like malware to antivirus programs and gain little here.
+# jieba: only its code; its own dictionary and models are left out (tools/hooks/hook-jieba.py),
+# KaiDrop brings its shorter word list (kaidrop/data/words-zh.xz).
 & $Python -m PyInstaller --onefile --windowed --noupx --name KaiDrop --icon assets/kaidrop.ico `
     --collect-all tkinterdnd2 --collect-data pypinyin --collect-data anyascii `
-    --add-data "kaidrop/data/readings-ja.xz;kaidrop/data" --distpath $Out --clean kaidrop/__main__.py
+    --additional-hooks-dir tools/hooks --exclude-module jieba.analyse --exclude-module jieba.posseg `
+    --exclude-module jieba.lac_small --exclude-module paddle `
+    --add-data "kaidrop/data/readings-ja.xz;kaidrop/data" --add-data "kaidrop/data/words-zh.xz;kaidrop/data" `
+    --distpath $Out --clean kaidrop/__main__.py
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 $exe = Join-Path $Out "KaiDrop.exe"
 

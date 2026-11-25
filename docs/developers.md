@@ -6,7 +6,7 @@ KaiDrop is written in Python with Tkinter. On macOS or Linux, run it from
 source with Python 3.10 or later (Tkinter included):
 
 ```
-pip install pypinyin anyascii      # for Chinese and other alphabets' names
+pip install pypinyin jieba anyascii   # for Chinese and other alphabets' names
 python -m kaidrop
 ```
 
@@ -58,8 +58,11 @@ A self-made certificate doesn't help: Windows doesn't trust it.
 | `kaidrop/romanize.py` | Other alphabets in Latin letters, and whether kanji are Japanese or Chinese |
 | `kaidrop/japanese.py` | Japanese in romaji: words and their readings from `kaidrop/data/readings-ja.xz` |
 | `kaidrop/kana.py` | Kana in Hepburn |
+| `kaidrop/chinese.py` | Chinese in pinyin, a word at a time: words from jieba with `kaidrop/data/words-zh.xz` |
 | `kaidrop/hangul.py` | Korean in the Revised Romanization |
 | `tools/make_readings.py` | Makes `kaidrop/data/readings-ja.xz` from UniDic's `lex.csv` |
+| `tools/make_words.py` | Makes `kaidrop/data/words-zh.xz` from jieba's dictionary (the common words) |
+| `tools/hooks/` | PyInstaller hooks: jieba without the files KaiDrop doesn't use |
 | `tools/make_icon.py` | Makes the icon files from the Kai apps' shared icons (`make_app_icons.py`) |
 | `tools/lock_requirements.py` | Makes `requirements-build.txt`, with each package's hashes |
 | `kaidrop/playlists.py` | Playlists' copies for the console, pointing to the songs' plain names |
@@ -80,7 +83,7 @@ A self-made certificate doesn't help: Windows doesn't trust it.
 | `kaidrop/logview.py` | The Log tab |
 | `kaidrop/icons.py` | The file panes' icons |
 | `kaidrop/settings.py` | Remembers the address and folders (never the password) |
-| `third_party/` | The licenses of what `KaiDrop.exe` includes: Python, Tcl/Tk, tkinterdnd2, TkDND, pypinyin, anyascii, UniDic |
+| `third_party/` | The licenses of what `KaiDrop.exe` includes: Python, Tcl/Tk, tkinterdnd2, TkDND, pypinyin, jieba, anyascii, UniDic |
 
 The version is in one place, `kaidrop/__init__.py`: the window's title and
 `pyproject.toml` take it from there.

@@ -61,7 +61,7 @@ On macOS or Linux, run it from source with Python 3.10 or later (Tkinter
 included):
 
 ```
-pip install pypinyin anyascii      # for Chinese and other alphabets' names
+pip install pypinyin jieba anyascii   # for Chinese and other alphabets' names
 python -m kaidrop
 ```
 
@@ -88,6 +88,7 @@ the files you choose, to a server you run. See [LICENSE](LICENSE).
 
 MIT. Copyright (c) 2026 Mizuiro.
 
-`KaiDrop.exe` includes Python, Tcl/Tk, tkinterdnd2, TkDND, pypinyin,
-anyascii and a list of readings made from UniDic, each under its own license:
+`KaiDrop.exe` includes Python, Tcl/Tk, tkinterdnd2, TkDND, pypinyin, jieba
+(with a shorter copy of its word list), anyascii and a list of readings made
+from UniDic, each under its own license:
 see [third_party/](third_party/).

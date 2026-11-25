@@ -14,6 +14,10 @@ file on the computer is never changed.
   kept: .m3u8 is UTF-8, .m3u and .pls the system code page (UTF-8 if
   they have a BOM, or their accents are only valid as UTF-8).
   Rewritten paths use forward slashes, relative to the playlist.
+- A .m3u or .m3u8 whose own name is changed keeps its name inside, in a
+  "#PLAYLIST:" line after #EXTM3U (in UTF-8), as KaiPlayer writes it and
+  shows it: Español.m3u8 goes as Espanol.m3u8, still called Español there.
+  One the playlist already has is kept.
 """
 from __future__ import annotations
 
@@ -31,6 +35,8 @@ from .romanize import AUTO
 
 EXTENSIONS = (".m3u", ".m3u8", ".pls")
 MAX_BYTES = 4 << 20  # Bigger ones aren't playlists anyone wrote by hand: sent as they are.
+TITLE_TAG = "#PLAYLIST:"
+TITLE_CHARS = 48     # The longest title KaiPlayer takes (it reads it among the first 4 lines).
 BOM = b"\xef\xbb\xbf"
 _PLS_ENTRY = re.compile(r"^(\s*File\d+\s*=\s*)(.*?)\s*$", re.IGNORECASE)
 _DRIVE = re.compile(r"^[A-Za-z]:[\\/]")
@@ -52,6 +58,8 @@ class PlaylistCopy:
     bom: bytes
     changes: tuple[Change, ...]
     outside: int    # Absolute entries whose song isn't being sent: left as they were.
+    title: bytes = b""  # A "#PLAYLIST:" line to add, with its line ending.
+    title_at: int = 0   # The line it goes before.
 
     def render(self, on_server: Callable[[str], bool]) -> tuple[bytes, int, int]:
         """The bytes to send, how many entries were changed, and how many were
@@ -62,6 +70,8 @@ class PlaylistCopy:
             if change.sent or on_server(change.remote):
                 lines[change.index] = change.line
                 changed += 1
+        if self.title:
+            lines.insert(self.title_at, self.title)
         return self.bom + b"".join(lines), changed, len(self.changes) - changed
 
     @property
@@ -85,6 +95,34 @@ def _encoding(path: Path, data: bytes, has_bom: bool) -> str:
         pass
     getencoding = getattr(locale, "getencoding", None)  # Python 3.11+.
     return getencoding() if getencoding else locale.getpreferredencoding(False)
+
+
+def _title(local: Path, remote: str) -> str:
+    """The playlist's own name, to keep inside it, when the console gets
+    another one: "" when the name is the same or KaiPlayer wouldn't take it."""
+    stem, remote_stem = local.stem, posixpath.splitext(posixpath.basename(remote))[0]
+    if local.suffix.lower() not in (".m3u", ".m3u8") or stem == remote_stem:
+        return ""
+    title = stem[:TITLE_CHARS].rstrip(" ")
+    if not title or title[0] in ". " or any(ord(c) < 0x20 or c in "\x7f/\\" for c in title):
+        return ""
+    return title
+
+
+def _title_line(lines: tuple[bytes, ...], title: str) -> tuple[tuple[bytes, ...], bytes, int]:
+    """Where the title line goes: after #EXTM3U, or first. The lines (the
+    first one ended if it wasn't), the line and its place; no line when the
+    playlist has a title already."""
+    if not title or any(line.lstrip().startswith(TITLE_TAG.encode()) for line in lines):
+        return lines, b"", 0
+    first = lines[0] if lines else b""
+    ending = first[len(first.rstrip(b"\r\n")):] or b"\n"
+    line = (TITLE_TAG + title).encode("utf-8") + ending
+    if first.strip().upper().startswith(b"#EXTM3U"):
+        if not first.endswith(b"\n"):
+            lines = (first + ending, *lines[1:])
+        return lines, line, 1
+    return lines, line, 0
 
 
 def local_key(path: str | Path) -> str:
@@ -178,7 +216,8 @@ def _same(a: str, b: str) -> bool:
 
 def prepare(local: Path, remote: str, sent: dict[str, str], plain: bool = True,
             kanji: str = AUTO) -> PlaylistCopy | None:
-    """Works out the console copy of the playlist at local, going to remote.
+    """Works out the console copy of the playlist at local, going to remote
+    (with its own name inside when remote's is another, see above).
     sent maps each file in the transfer (by local_key) to its path on the console.
     kanji: how kanji are read (see romanize.py), as plan.py read them.
     None when nothing in it needs changing, or it can't be read."""
@@ -231,9 +270,10 @@ def prepare(local: Path, remote: str, sent: dict[str, str], plain: bool = True,
         except UnicodeEncodeError:
             continue
         changes.append(Change(index, line, target, bool(in_transfer)))
-    if not changes and not outside:
+    lines, title, title_at = _title_line(lines, _title(local, remote))
+    if not changes and not outside and not title:
         return None
-    return PlaylistCopy(lines, bom, tuple(changes), outside)
+    return PlaylistCopy(lines, bom, tuple(changes), outside, title, title_at)
 
 
 def describe(name: str, changed: int, missing: int, outside: int) -> str:

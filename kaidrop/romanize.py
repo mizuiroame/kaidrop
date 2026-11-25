@@ -1,7 +1,8 @@
 """Names in other alphabets written in Latin letters, by language.
 
 - Japanese in romaji (水色 -> Mizuiro), see japanese.py.
-- Chinese in pinyin without tones (北京 -> Beijing), with pypinyin.
+- Chinese in pinyin without tones, by the word (北京欢迎你 -> Beijing Huanying Ni),
+  see chinese.py.
 - Korean in the Revised Romanization (한국어 -> Hangugeo), see hangul.py.
 - Cyrillic, Greek, Arabic, Hebrew, Thai and the other scripts with anyascii
   (Москва -> Moskva).
@@ -28,7 +29,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from . import hangul, japanese
+from . import chinese, hangul, japanese
 from .kana import is_kana
 
 # How kanji are read (the "Kanji" setting).
@@ -43,19 +44,8 @@ _CJK_PUNCTUATION = str.maketrans({
 
 
 def _chinese(text: str) -> str:
-    """Hanzi in pinyin without tones, a word at a time: 北京天安门 -> Beijing Tian An Men."""
-    try:  # Loads its dictionary: only when needed.
-        from pypinyin import Style, lazy_pinyin
-        from pypinyin.seg.mmseg import seg
-    except ImportError:  # Run from source without it: the hanzi become "_".
-        return text
-
-    words = []
-    for word in seg.cut(text):
-        latin = "".join(lazy_pinyin(word, style=Style.NORMAL, v_to_u=True, errors=lambda _: ""))
-        if latin:
-            words.append(latin[:1].upper() + latin[1:])
-    return " ".join(words)
+    """Hanzi in pinyin without tones, a word at a time: 北京欢迎你 -> Beijing Huanying Ni."""
+    return chinese.romanize(text)
 
 
 def _other(c: str) -> str:
@@ -82,7 +72,7 @@ def _script(c: str, kanji_japanese: bool) -> str:
 def preload() -> None:
     """Loads the dictionaries ahead of time, so the first names don't wait."""
     japanese.preload()
-    _chinese("中")
+    chinese.preload()
     _other("Я")
 
 

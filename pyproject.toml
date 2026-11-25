@@ -6,7 +6,7 @@ readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Mizuiro"}]
 requires-python = ">=3.10"
-dependencies = ["pypinyin>=0.55", "anyascii>=0.3.3"]
+dependencies = ["pypinyin>=0.55", "jieba>=0.42.1", "anyascii>=0.3.3"]
 
 [project.scripts]
 kaidrop = "kaidrop.app:main"

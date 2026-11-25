@@ -200,6 +200,75 @@ class PlaylistTest(Library):
                                                        remote["04 水色の街.mp3"], remote["Top.mp3"]])
 
 
+def kaiplayer_title(data: bytes) -> str | None:
+    """The title KaiPlayer shows, as its readTitle() (source/playlist.c) reads
+    it: a "#PLAYLIST:" line among the first 4, before the songs start."""
+    for i, raw in enumerate(data.split(b"\n")[:4]):
+        line = raw[3:] if i == 0 and raw.startswith(b"\xef\xbb\xbf") else raw
+        line = line.rstrip(b"\r")
+        if line.startswith(b"#PLAYLIST:"):
+            title = line[len(b"#PLAYLIST:"):].decode("utf-8")
+            ok = (title and len(title) <= 48 and title[0] not in ". " and title[-1] != " "
+                  and not any(ord(c) < 0x20 or c in "\x7f/\\" for c in title))
+            return title if ok else None
+        if not line.startswith(b"#"):
+            break
+    return None
+
+
+class PlaylistTitleTest(Library):
+    def test_renamed_playlist_keeps_its_name_inside(self):
+        self.write("Mi lista Ñ.m3u8", "#EXTM3U\n../Artista Ñ/06 Canción.flac\n")
+        item = self.item(self.send_all(), "Mi lista Ñ.m3u8")
+        self.assertEqual(item.remote, "/music/Musica/Playlists/Mi lista N.m3u8")
+        data, changed, _ = item.playlist.render(everything_there)
+        self.assertEqual(data.decode("utf-8"), "#EXTM3U\n#PLAYLIST:Mi lista Ñ\n../Artista N/06 Cancion.flac\n")
+        self.assertEqual(changed, 1)
+        self.assertEqual(item.size, len(data))
+        self.assertEqual(kaiplayer_title(data), "Mi lista Ñ")
+
+    def test_title_alone_when_no_entry_changes(self):
+        self.write("北京欢迎你.m3u8", "#EXTM3U\n../Top.mp3\n")
+        item = self.item(self.send_all(), "北京欢迎你.m3u8")
+        self.assertEqual(item.remote, "/music/Musica/Playlists/Beijing Huanying Ni.m3u8")
+        data, changed, _ = item.playlist.render(everything_there)
+        self.assertEqual(data.decode("utf-8"), "#EXTM3U\n#PLAYLIST:北京欢迎你\n../Top.mp3\n")
+        self.assertEqual((changed, item.playlist_changes), (0, 0))
+        self.assertEqual(item.size, len(data))
+
+    def test_existing_title_kept_not_doubled(self):
+        self.write("Español.m3u8", "#EXTM3U\n#PLAYLIST:Mis canciones\n../Artista Ñ/06 Canción.flac\n")
+        data, _, _ = self.item(self.send_all(), "Español.m3u8").playlist.render(everything_there)
+        self.assertEqual(data.decode("utf-8"), "#EXTM3U\n#PLAYLIST:Mis canciones\n../Artista N/06 Cancion.flac\n")
+        self.write("Ñandú.m3u8", "#EXTM3U\n#PLAYLIST:Ñandú\n../Top.mp3\n")
+        self.assertIsNone(self.item(self.send_all(), "Ñandú.m3u8").playlist)  # Nothing to change.
+
+    def test_without_extm3u_bom_and_line_endings(self):
+        self.write("Ñ.m3u", "../Top.mp3\n", newline="\r\n")
+        data, _, _ = self.item(self.send_all(), "Ñ.m3u").playlist.render(everything_there)
+        self.assertEqual(data, "#PLAYLIST:Ñ\r\n../Top.mp3\r\n".encode("utf-8"))
+        self.write("Ü.m3u8", "#EXTM3U\n../Top.mp3\n", newline="\r\n", bom=True)
+        data, _, _ = self.item(self.send_all(), "Ü.m3u8").playlist.render(everything_there)
+        self.assertEqual(data, b"\xef\xbb\xbf" + "#EXTM3U\r\n#PLAYLIST:Ü\r\n../Top.mp3\r\n".encode("utf-8"))
+        self.assertEqual(kaiplayer_title(data), "Ü")
+        self.write("Ö.m3u8", "#EXTM3U")  # No line ending at all.
+        data, _, _ = self.item(self.send_all(), "Ö.m3u8").playlist.render(everything_there)
+        self.assertEqual(data.decode("utf-8"), "#EXTM3U\n#PLAYLIST:Ö\n")
+
+    def test_long_name_cut_to_what_kaiplayer_takes(self):
+        name = "Canciones para el viaje largo de verano a la playa Ñ"  # 52 letters.
+        self.write(name + ".m3u8", "#EXTM3U\n../Top.mp3\n")
+        data, _, _ = self.item(self.send_all(), name + ".m3u8").playlist.render(everything_there)
+        self.assertEqual(kaiplayer_title(data), name[:48].rstrip())
+
+    def test_no_title_when_the_name_stays_or_for_pls(self):
+        self.write("mix.m3u8", "#EXTM3U\n../Artista Ñ/06 Canción.flac\n")
+        data, _, _ = self.item(self.send_all(), "mix.m3u8").playlist.render(everything_there)
+        self.assertNotIn(b"#PLAYLIST", data)
+        self.write("Radio Ñ.pls", "[playlist]\nFile1=../Top.mp3\nNumberOfEntries=1\n")
+        self.assertIsNone(self.item(self.send_all(), "Radio Ñ.pls").playlist)
+
+
 @unittest.skipIf(FTPServer is None, "pyftpdlib is not installed")
 class PlaylistUploadTest(Library):
     def setUp(self):

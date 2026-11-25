@@ -8,6 +8,8 @@ altgraph==0.17.5 \
 anyascii==0.3.3 \
     --hash=sha256:c94e9dd9d47b3d9494eca305fef9447d00b4bf1a32aff85aa746fa3ec7fb95c3 \
     --hash=sha256:f5ab5e53c8781a36b5a40e1296a0eeda2f48c649ef10c3921c1381b1d00dee7a
+jieba==0.42.1 \
+    --hash=sha256:055ca12f62674fafed09427f176506079bc135638a14e23e25be909131928db2
 packaging==26.4 \
     --hash=sha256:81383611a09c1bc0b08b76e0fd5829d7c6824c65b27a6aee339da133f4233ea2 \
     --hash=sha256:c4b671c41ddb9bf26e543c37723610d28fb6bf7affc4da17cf048d419d2c062a
