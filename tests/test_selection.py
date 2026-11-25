@@ -1,18 +1,26 @@
 """Selecting several rows in a file pane, as in Explorer (needs a display; skipped without one)."""
+import os
 import tkinter as tk
 import unittest
 from types import SimpleNamespace
 
 from kaidrop.panes import CONTROL, FilePane
 
-try:
-    _root = tk.Tk()
-    _root.withdraw()
-except tk.TclError:
+# In CI (GitHub sets CI=true) there is no desktop to click and focus in:
+# these tests are skipped there and run on a PC.
+_SKIP_REASON = "no display"
+if os.environ.get("CI"):
     _root = None
+    _SKIP_REASON = "GUI test: needs a desktop session, skipped in CI"
+else:
+    try:
+        _root = tk.Tk()
+        _root.withdraw()
+    except tk.TclError:
+        _root = None
 
 
-@unittest.skipIf(_root is None, "no display")
+@unittest.skipIf(_root is None, _SKIP_REASON)
 class SelectionTest(unittest.TestCase):
     def setUp(self):
         self.pane = FilePane(_root, "Test")
@@ -114,7 +122,7 @@ class SelectionTest(unittest.TestCase):
         self.assertEqual(self.tree.selection(), ("1", "3", "5"))  # All three go.
 
 
-@unittest.skipIf(_root is None, "no display")
+@unittest.skipIf(_root is None, _SKIP_REASON)
 class HandOverTest(unittest.TestCase):
     """Up and down in a list selects; out of it sideways, the selection is
     dragged to the other pane and dropped there."""
