@@ -19,7 +19,6 @@ powershell -File build.ps1                               # builds dist/KaiDrop.e
 powershell -File build.ps1 -Out dist-test                # a test build, elsewhere
 ```
 
-<<<<<<< HEAD
 `requirements-dev.txt` lists what the build and tests use, at exact versions.
 `requirements-build.txt` is made from it by `python tools/lock_requirements.py`
 (run it after changing `requirements-dev.txt`): every package they pull in,
@@ -28,6 +27,10 @@ It's resolved for Windows and the Python the .exe is built with (3.13).
 
 The .exe isn't packed with UPX (`--noupx`): antivirus programs distrust
 packed programs, and the gain is small.
+
+GitHub Actions runs the tests on Windows on every push and pull request
+(`.github/workflows/tests.yml`). The selection tests need a desktop to click
+in, so they are skipped there (`CI` is set) and run only on a PC.
 
 ### Signing
 
@@ -48,11 +51,6 @@ authority (paid, yearly), Azure Trusted Signing (paid, monthly, for
 individuals in some countries), or SignPath's free plan for open-source
 projects (signing then runs in their CI, not here). A self-made certificate
 doesn't help: Windows doesn't trust it.
-=======
-GitHub Actions runs the tests on Windows on every push and pull request
-(`.github/workflows/tests.yml`). The selection tests need a desktop to click
-in, so they are skipped there (`CI` is set) and run only on a PC.
->>>>>>> ci-tests
 
 ## The files
 
