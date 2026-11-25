@@ -17,6 +17,10 @@ pip install -r requirements-dev.txt                # pyftpdlib and PyInstaller
 powershell -File build.ps1                         # builds dist/KaiDrop.exe
 ```
 
+GitHub Actions runs the tests on Windows on every push and pull request
+(`.github/workflows/tests.yml`). The selection tests need a desktop to click
+in, so they are skipped there (`CI` is set) and run only on a PC.
+
 ## The files
 
 | File | What it does |
