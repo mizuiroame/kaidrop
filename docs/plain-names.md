@@ -28,12 +28,59 @@ on the console a name it can list:
 
 - accents are dropped: `Canción` → `Cancion`, `Ñandú` → `Nandu`;
 - typographic punctuation becomes plain: `Why’d` → `Why'd`, `–` → `-`;
-- other characters, like Japanese, become `_`: `04 みずいろの雨.mp3` →
-  `04 _.mp3`;
-- names that would clash get a number: `Cancion (2).mp3`.
+- other alphabets are written in Latin letters, by language (see
+  [below](#other-alphabets)): `水色.mp3` → `Mizuiro.mp3`,
+  `한국어.mp3` → `Hangugeo.mp3`, `Москва.mp3` → `Moskva.mp3`;
+- anything left, like emoji, becomes `_`;
+- names that would clash get a number: `Cancion (2).mp3`;
+- a name longer than 240 characters is cut (the card takes 255).
 
 **Your files on the computer are never renamed or changed.** Only the copies
 on the console get the new names.
+
+## Other alphabets
+
+| Written in | As | Example |
+|------------|----|---------|
+| Japanese | romaji (Hepburn) | `04 水色の空.mp3` → `04 Mizuiro no Sora.mp3` |
+| Chinese | pinyin, without tones | `我爱北京.mp3` → `Wo Ai Beijing.mp3` |
+| Korean | Revised Romanization | `한국 노래.mp3` → `Hanguk Norae.mp3` |
+| Cyrillic, Greek | their usual Latin spelling | `Москва` → `Moskva`, `Ελληνικά` → `Ellinika` |
+| Arabic, Hebrew, Thai, Hindi and the rest | letter by letter | `שלום` → `slvm` |
+
+**Japanese.** Kanji have several readings (水色 is *mizuiro*, not
+*suishoku*), so KaiDrop splits the name into words and reads each one with a
+list of half a million Japanese words and their readings, made from
+[UniDic](https://clrd.ninjal.ac.jp/unidic/). Words start with a capital;
+particles are in lower case, as said (`は` → `wa`, `を` → `o`); endings
+join their word (`書いた` → `Kaita`, `待って` → `Matte`). Kana are written as
+spelled, and the long mark `ー` repeats its vowel: `東京` → `Toukyou`,
+`コーヒー` → `Koohii`. It's right for most names, but it doesn't understand
+the sentence, so now and then a word gets another of its readings.
+
+**Chinese.** Pinyin with [pypinyin](https://github.com/mozillazg/python-pinyin),
+a word at a time (`重庆` → `Chongqing`), without tone marks; `ü` is `u`.
+
+**Korean.** Each syllable's letters, with the Revised Romanization's rules
+for the letters that meet between syllables (`국물` → `Gungmul`, `신라` →
+`Silla`).
+
+**The rest** with [anyascii](https://github.com/anyascii/anyascii). Arabic and
+Hebrew are written without their vowels, as they are in their own script.
+
+### Japanese or Chinese?
+
+Kanji alone can be either. KaiDrop decides for each name:
+
+1. **Kana in the name, or in a folder above it** (ひらがな, カタカナ): Japanese,
+   since Chinese doesn't use kana. `雨.mp3` in a folder `みずいろ楽団` is
+   `Ame.mp3`.
+2. **Otherwise, a character only Chinese writes**, in the name or a folder
+   above it (simplified ones such as `门`, `爱`, `东`, where Japanese has
+   `門`, `愛`, `東`): Chinese. `雨.mp3` in a folder `中国音乐` is `Yu.mp3`.
+3. **Otherwise Japanese**: `水色.mp3` is `Mizuiro.mp3`. Traditional Chinese
+   with no simplified character, such as Taiwan's or Hong Kong's, is read as
+   Japanese too.
 
 Before sending, KaiDrop shows each file's name on your computer and on the
 console (renamed ones in color). With plain names on, folders made or renamed

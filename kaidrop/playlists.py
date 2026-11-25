@@ -127,7 +127,8 @@ class _Names:
                 entries = list(folder.iterdir())
             except OSError:
                 entries = []
-            names = unique_names([e.name for e in entries], {e.name for e in entries if e.is_dir()}, self.plain)
+            names = unique_names([e.name for e in entries], {e.name for e in entries if e.is_dir()}, self.plain,
+                                 str(folder))
             self.folders[key] = {local.lower(): remote for local, remote in names.items()}
         return self.folders[key].get(name.lower())
 

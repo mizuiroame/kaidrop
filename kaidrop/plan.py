@@ -43,7 +43,7 @@ def _walk(local: Path, remote: str, plain: bool, renamed: bool, items: list[Uplo
         entries = sorted(local.iterdir(), key=lambda e: e.name.lower())
     except OSError:
         return  # Unreadable folder: nothing to send from it.
-    names = unique_names([e.name for e in entries], {e.name for e in entries if e.is_dir()}, plain)
+    names = unique_names([e.name for e in entries], {e.name for e in entries if e.is_dir()}, plain, str(local))
     for entry in entries:
         target = posixpath.join(remote, names[entry.name])
         changed = renamed or names[entry.name] != entry.name
@@ -53,13 +53,20 @@ def _walk(local: Path, remote: str, plain: bool, renamed: bool, items: list[Uplo
             items.append(UploadItem(entry, target, entry.stat().st_size, changed))
 
 
+def _common_parent(sources: list[Path]) -> str:
+    """The folder the sources are in (it tells Japanese kanji from Chinese)."""
+    parents = {str(source.parent) for source in sources}
+    return parents.pop() if len(parents) == 1 else ""
+
+
 def build_plan(sources: list[Path], remote_root: str, plain: bool = True) -> Plan:
     """Plans uploading each source (a folder, with everything in it, or a
     file) into remote_root. plain: give names the console can list."""
     remote_root = "/" + remote_root.strip("/") if remote_root.strip("/") else "/"
     items: list[UploadItem] = []
     folders: list[str] = [remote_root] if remote_root != "/" else []
-    names = unique_names([s.name for s in sources], {s.name for s in sources if s.is_dir()}, plain)
+    names = unique_names([s.name for s in sources], {s.name for s in sources if s.is_dir()}, plain,
+                         _common_parent(sources))
     for source in sorted(sources, key=lambda s: s.name.lower()):
         target = posixpath.join(remote_root, names[source.name])
         changed = names[source.name] != source.name

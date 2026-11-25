@@ -77,12 +77,12 @@ class Library(unittest.TestCase):
         root = Path(self.tmp.name) / "Música"
         artist = root / "Artista Ñ"
         (artist / "Disco Ü").mkdir(parents=True)
-        (root / "松原みき").mkdir()
+        (root / "みずいろ楽団").mkdir()
         (root / "Playlists").mkdir()
         (artist / "06 Canción.flac").write_bytes(b"a")
         (artist / "07 Plain.flac").write_bytes(b"b")
         (artist / "Disco Ü" / "01 Ñu.flac").write_bytes(b"c")
-        (root / "松原みき" / "04 みずいろの雨.mp3").write_bytes(b"d")
+        (root / "みずいろ楽団" / "04 水色の街.mp3").write_bytes(b"d")
         (root / "Top.mp3").write_bytes(b"e")
         self.outside = Path(self.tmp.name) / "Elsewhere" / "lejos.mp3"
         self.outside.parent.mkdir()
@@ -124,9 +124,9 @@ class PlaylistTest(Library):
         self.assertEqual(data, b"\xef\xbb\xbf../Artista N/Disco U/01 Nu.flac\n")
 
     def test_japanese_names(self):
-        self.write("jp.m3u8", "#EXTINF:180,松原みき - みずいろの雨\n../松原みき/04 みずいろの雨.mp3\n")
+        self.write("jp.m3u8", "#EXTINF:180,みずいろ楽団 - 水色の街\n../みずいろ楽団/04 水色の街.mp3\n")
         data, _, _ = self.item(self.send_all(), "jp.m3u8").playlist.render(everything_there)
-        self.assertEqual(data.decode("utf-8"), "#EXTINF:180,松原みき - みずいろの雨\n../untitled/04 _.mp3\n")
+        self.assertEqual(data.decode("utf-8"), "#EXTINF:180,みずいろ楽団 - 水色の街\n../Mizuiro Gakudan/04 Mizuiro no Machi.mp3\n")
 
     def test_absolute_inside_and_outside(self):
         song = self.root / "Artista Ñ" / "06 Canción.flac"
@@ -190,14 +190,14 @@ class PlaylistTest(Library):
     def test_kaiplayer_reads_the_rewritten_playlist(self):
         song = self.root / "Artista Ñ" / "Disco Ü" / "01 Ñu.flac"
         self.write("Mix.m3u8", f"﻿#EXTM3U\r\n#EXTINF:1,Ñu\r\n../Artista Ñ/06 Canción.flac\r\n{song}\r\n"
-                   "  ../松原みき/04 みずいろの雨.mp3  \r\n../Top.mp3\r\n")
+                   "  ../みずいろ楽団/04 水色の街.mp3  \r\n../Top.mp3\r\n")
         plan = self.send_all()
         item = self.item(plan, "Mix.m3u8")
         data, _, _ = item.playlist.render(everything_there)
         base = "sdmc:" + item.remote.rsplit("/", 1)[0]
         remote = {i.local.name: "sdmc:" + i.remote for i in plan.items}
         self.assertEqual(kaiplayer_parse(data, base), [remote["06 Canción.flac"], remote["01 Ñu.flac"],
-                                                       remote["04 みずいろの雨.mp3"], remote["Top.mp3"]])
+                                                       remote["04 水色の街.mp3"], remote["Top.mp3"]])
 
 
 @unittest.skipIf(FTPServer is None, "pyftpdlib is not installed")

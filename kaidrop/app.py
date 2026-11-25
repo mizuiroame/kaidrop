@@ -12,7 +12,7 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Callable
 
-from . import __version__, settings
+from . import __version__, romanize, settings
 from .appicon import APP_ICONS
 from .batch import Batch, leftover
 from .conflict import ConflictDialog, Side
@@ -36,7 +36,8 @@ POLL_MS = 60
 RATE_EVERY_S = 0.25  # How often the speed and time left are redrawn.
 EXPLANATION = ("Switch 2 hides files and folders whose names have accents (á, ñ…) or other non-ASCII "
                "characters: they are saved, but no app on the console can see them. With plain names on, the "
-               "copies on the console get names it can list. Your files here are never renamed.")
+               "copies on the console get names it can list: accents dropped, and Japanese, Chinese, Korean "
+               "or other alphabets in Latin letters (水色 -> Mizuiro). Your files here are never renamed.")
 
 
 class KaiDrop(_Root):
@@ -63,6 +64,7 @@ class KaiDrop(_Root):
         self.rate_drawn = 0.0                  # When the speed was last redrawn.
         self._build()
         threading.Thread(target=self._transfer_worker, daemon=True).start()
+        threading.Thread(target=romanize.preload, daemon=True).start()  # So the first names don't wait.
         self.after(POLL_MS, self._poll)
         self.protocol("WM_DELETE_WINDOW", self._close)
 

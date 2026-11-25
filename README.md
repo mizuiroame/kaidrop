@@ -23,8 +23,10 @@ music, and a transfer cut halfway and continued after reconnecting.
 - **Plain names for Switch 2.** The console hides files and folders whose
   names have accents or other non-ASCII characters, in every app. KaiDrop
   gives the copies on the console names it can list: `06 Canción.flac`
-  becomes `06 Cancion.flac`. **Your files on the computer are never renamed
-  or changed.** [More](docs/plain-names.md)
+  becomes `06 Cancion.flac`, and Japanese, Chinese, Korean or other
+  alphabets are written in Latin letters (`水色.mp3` becomes `Mizuiro.mp3`).
+  **Your files on the computer are never renamed or changed.**
+  [More](docs/plain-names.md)
 - **Playlists keep working**: the copy of an `.m3u`, `.m3u8` or `.pls` on
   the console points to the songs' plain names.
   [More](docs/plain-names.md#playlists-keep-working)
@@ -59,6 +61,7 @@ On macOS or Linux, run it from source with Python 3.10 or later (Tkinter
 included):
 
 ```
+pip install pypinyin anyascii      # for Chinese and other alphabets' names
 python -m kaidrop
 ```
 
@@ -85,5 +88,6 @@ the files you choose, to a server you run. See [LICENSE](LICENSE).
 
 MIT. Copyright (c) 2026 Mizuiro.
 
-`KaiDrop.exe` includes Python, Tcl/Tk, tkinterdnd2 and TkDND, each under its
-own license: see [third_party/](third_party/).
+`KaiDrop.exe` includes Python, Tcl/Tk, tkinterdnd2, TkDND, pypinyin,
+anyascii and a list of readings made from UniDic, each under its own license:
+see [third_party/](third_party/).

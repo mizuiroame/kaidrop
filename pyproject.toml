@@ -6,6 +6,7 @@ readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Mizuiro"}]
 requires-python = ">=3.10"
+dependencies = ["pypinyin>=0.55", "anyascii>=0.3.3"]
 
 [project.scripts]
 kaidrop = "kaidrop.app:main"
@@ -16,6 +17,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["kaidrop"]
+
+[tool.setuptools.package-data]
+kaidrop = ["data/*.xz"]
 
 [tool.setuptools.dynamic]
 version = {attr = "kaidrop.__version__"}

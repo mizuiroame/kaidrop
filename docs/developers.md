@@ -6,6 +6,7 @@ KaiDrop is written in Python with Tkinter. On macOS or Linux, run it from
 source with Python 3.10 or later (Tkinter included):
 
 ```
+pip install pypinyin anyascii      # for Chinese and other alphabets' names
 python -m kaidrop
 ```
 
@@ -22,6 +23,11 @@ powershell -File build.ps1                         # builds dist/KaiDrop.exe
 | File | What it does |
 |------|--------------|
 | `kaidrop/names.py` | The plain names for the console |
+| `kaidrop/romanize.py` | Other alphabets in Latin letters, and whether kanji are Japanese or Chinese |
+| `kaidrop/japanese.py` | Japanese in romaji: words and their readings from `kaidrop/data/readings-ja.xz` |
+| `kaidrop/kana.py` | Kana in Hepburn |
+| `kaidrop/hangul.py` | Korean in the Revised Romanization |
+| `tools/make_readings.py` | Makes `kaidrop/data/readings-ja.xz` from UniDic's `lex.csv` |
 | `kaidrop/playlists.py` | Playlists' copies for the console, pointing to the songs' plain names |
 | `kaidrop/plan.py` | What to send where: the files and their names on the console |
 | `kaidrop/ftp.py` | Sending: folders, files already there, `.part` until complete, cancel |
@@ -40,7 +46,7 @@ powershell -File build.ps1                         # builds dist/KaiDrop.exe
 | `kaidrop/logview.py` | The Log tab |
 | `kaidrop/icons.py` | The file panes' icons |
 | `kaidrop/settings.py` | Remembers the address and folders (never the password) |
-| `third_party/` | The licenses of what `KaiDrop.exe` includes: Python, Tcl/Tk, tkinterdnd2, TkDND |
+| `third_party/` | The licenses of what `KaiDrop.exe` includes: Python, Tcl/Tk, tkinterdnd2, TkDND, pypinyin, anyascii, UniDic |
 
 The version is in one place, `kaidrop/__init__.py`: the window's title and
 `pyproject.toml` take it from there.
