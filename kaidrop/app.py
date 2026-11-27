@@ -103,7 +103,7 @@ class KaiDrop(_Root):
         self.local = LocalPane(panes, self.saved.local_folder, self._send_selected)
         # The server opens at its root.
         self.remote = RemotePane(panes, "/", self._set_status, self.plain.get, self._download_selected,
-                                 self._kanji_mode)
+                                 self._kanji_mode, lambda: self.local.path)
         panes.add(self.local, weight=1)
         panes.add(self.remote, weight=1)
 

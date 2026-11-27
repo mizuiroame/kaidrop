@@ -1,13 +1,14 @@
 """The two file panes: this computer on the left, the server on the right."""
 from __future__ import annotations
 
+import ftplib
 import os
 import posixpath
 import sys
 import tkinter as tk
 from dataclasses import dataclass
 from pathlib import Path
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Callable
 
 from .download import runs_code
@@ -16,7 +17,7 @@ from .icons import ICONS
 from .names import ascii_name, folder_name, is_plain
 from .romanize import AUTO
 from .places import file_icon
-from .remote import RemoteEntry, RemoteSession, delete_tree, list_dir, parent
+from .remote import HiddenFiles, RemoteEntry, RemoteSession, delete_tree, list_dir, parent
 from .serverops import Item, copy_items, move_items
 
 _BAD_LOCAL = set('\\/:*?"<>|')  # Characters Windows doesn't allow in names.
@@ -24,6 +25,17 @@ SHIFT, CONTROL = 0x0001, 0x0004   # Event.state bits.
 CLICK_SLOP = 8                    # Pixels a press may move and still be a click, not a drag.
 AUTOSCROLL_MS = 60                # How often the list scrolls while a drag is past its edge.
 _images: dict[str, tk.PhotoImage] = {}
+
+
+def same_name_folder(here: Path | None, name: str) -> Path | None:
+    """The folder on this computer that a server folder called name likely
+    came from: name inside the open folder, or the open folder itself."""
+    if here is None:
+        return None
+    for candidate in (here / name, here):
+        if candidate.name.lower() == name.lower() and candidate.is_dir():
+            return candidate
+    return None
 
 # A context menu entry: a label and its command (None: shown greyed out), or None for a separator.
 MenuItem = tuple[str, Callable[[], None] | None] | None
@@ -436,9 +448,11 @@ class RemotePane(FilePane):
 
     def __init__(self, master: tk.Misc, start: str, on_status: Callable[[str], None],
                  plain_names: Callable[[], bool], on_download: Callable[[], None],
-                 kanji: Callable[[], str] = lambda: AUTO) -> None:
+                 kanji: Callable[[], str] = lambda: AUTO,
+                 local_folder: Callable[[], Path | None] = lambda: None) -> None:
         self.on_download = on_download
         self.kanji = kanji
+        self.local_folder = local_folder  # The folder open on the left, for names the console hides.
         super().__init__(master, "Server (the console)")
         ttk.Button(self.tools, text="New folder", command=self._new_folder).pack(side="left", padx=(4, 0))
         ttk.Button(self.tools, text="Delete", command=self._delete).pack(side="left", padx=(4, 0))
@@ -620,12 +634,55 @@ class RemotePane(FilePane):
         if not messagebox.askyesno("KaiDrop", f"Delete from the server?\n\n{names}\n\nFolders are deleted with "
                                               "everything in them. This can't be undone."):
             return
-        targets = [(posixpath.join(self.path, name), is_dir) for name, is_dir in sel]
+        here = self.local_folder()
+        targets = [(posixpath.join(self.path, name), is_dir, same_name_folder(here, name) if is_dir else None)
+                   for name, is_dir in sel]
+        self._delete_targets(targets)
 
-        def work(ftp) -> None:
-            for path, is_dir in targets:
-                delete_tree(ftp, path, is_dir)
+    def _delete_targets(self, targets: list[tuple[str, bool, Path | None]]) -> None:
+        """Deletes each target, going on past one that fails. A folder the
+        console won't empty (hidden names) is offered a second try with a
+        folder on this computer to take the names from."""
+        if not self.session:
+            return
 
-        self.session.submit(work, lambda _: self.refresh(),
+        def work(ftp) -> list[tuple[str, str, bool]]:
+            failed = []
+            for path, is_dir, local in targets:
+                try:
+                    delete_tree(ftp, path, is_dir, local=local)
+                except HiddenFiles as e:
+                    failed.append((path, str(e), True))
+                except ftplib.Error as e:
+                    failed.append((path, str(e), False))
+            return failed
+
+        self.on_status("Deleting…")
+        self.session.submit(work, self._deleted,
                             lambda m: (messagebox.showerror("KaiDrop", f"Couldn't delete everything:\n{m}"),
                                        self.refresh()))
+
+    def _deleted(self, failed: list[tuple[str, str, bool]]) -> None:
+        self.refresh()
+        if not failed:
+            self.on_status("Deleted.")
+            return
+        self.on_status(f"{len(failed)} couldn't be deleted.")
+        messagebox.showerror("KaiDrop", "Couldn't delete everything:\n\n" + "\n\n".join(m for _, m, _ in failed))
+        retries = [(path, True, folder) for path, _, can_retry in failed
+                   if can_retry and (folder := self._ask_source_folder(path))]
+        if retries:
+            self._delete_targets(retries)
+
+    def _ask_source_folder(self, path: str) -> Path | None:
+        """The folder on this computer that path was sent from, if the user picks one."""
+        name = posixpath.basename(path)
+        if not messagebox.askyesno(
+                "KaiDrop", f"The console doesn't show files whose names have accents or Japanese letters, "
+                           f"so KaiDrop can only delete them by name.\n\nDo you have the folder \"{name}\" on "
+                           "this computer (the one it was sent from)? Pick it, and KaiDrop deletes those "
+                           "names from the console's folder. Nothing on this computer is changed."):
+            return None
+        chosen = filedialog.askdirectory(title=f"The folder \"{name}\" was sent from",
+                                         initialdir=str(self.local_folder() or Path.home()))
+        return Path(chosen) if chosen else None

@@ -8,6 +8,7 @@ import queue
 import re
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 
 from .ftp import Connection, connect
@@ -82,15 +83,73 @@ def parent(path: str) -> str:
     return posixpath.dirname(path.rstrip("/")) or "/"
 
 
-def delete_tree(ftp: ftplib.FTP, path: str, is_dir: bool, depth: int = 0) -> None:
-    """Deletes a file, or a folder with everything in it."""
+class HiddenFiles(ftplib.error_perm):
+    """A folder that stays full after everything listed in it was deleted.
+    The Switch 2 leaves names with accents, Japanese and other non-ASCII
+    letters out of its listings, but deletes them when asked by name."""
+
+    def __init__(self, path: str, reply: str = "") -> None:
+        said = f" (the console said: {reply})" if reply else ""
+        super().__init__(f"{path} couldn't be removed{said}. It may still have files the console doesn't "
+                         "list: names with accents, Japanese or other non-English letters.")
+        self.path = path
+
+
+def delete_tree(ftp: ftplib.FTP, path: str, is_dir: bool, depth: int = 0,
+                local: Path | None = None) -> None:
+    """Deletes a file, or a folder with everything in it.
+
+    local: a folder on this computer with the same contents (the one it was
+    sent from). If the server's folder won't go after its listed entries
+    did, the names in local that the console hides are deleted by name."""
     if not is_dir:
         ftp.delete(path)
         return
     check_depth(depth)
+    stuck = False  # A folder inside kept hidden names: delete the rest, then say so.
     for entry in list_dir(ftp, path):
-        delete_tree(ftp, posixpath.join(path, entry.name), entry.is_dir, depth + 1)
-    ftp.rmd(path)
+        try:
+            delete_tree(ftp, posixpath.join(path, entry.name), entry.is_dir, depth + 1,
+                        _mirror(local, entry.name))
+        except HiddenFiles:
+            stuck = True
+    try:
+        ftp.rmd(path)
+        return
+    except ftplib.error_perm as e:
+        reply = str(e)  # Still full: of names the listing left out, if any.
+    removed = _delete_hidden(ftp, path, depth, local)
+    if stuck or not removed:
+        raise HiddenFiles(path, reply)
+    try:
+        ftp.rmd(path)
+    except ftplib.error_perm as e:
+        raise HiddenFiles(path, str(e)) from None
+
+
+def _mirror(local: Path | None, name: str) -> Path | None:
+    child = local / name if local else None
+    return child if child and child.is_dir() else None
+
+
+def _delete_hidden(ftp: ftplib.FTP, path: str, depth: int, local: Path | None) -> bool:
+    """Deletes, by name, the entries of local the console leaves out of its
+    listings (non-ASCII names). True if any went."""
+    if local is None:
+        return False
+    try:
+        children = [c for c in local.iterdir() if not c.name.isascii() and usable_name(c.name)]
+    except OSError:
+        return False
+    removed = False
+    for child in children:
+        target = posixpath.join(path, child.name)
+        try:
+            delete_tree(ftp, target, child.is_dir(), depth + 1, child if child.is_dir() else None)
+            removed = True
+        except ftplib.error_perm:
+            pass  # Not on the server under that name, or still full (then so is path).
+    return removed
 
 
 # Connection states reported by a session.
