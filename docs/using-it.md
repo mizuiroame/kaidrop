@@ -65,6 +65,12 @@ the right**.
   as sending it.
 - A name already there gets a free one (*name (2)*), and a folder can't go
   into itself.
+- **Deleting a folder with hidden files.** The console leaves names with
+  accents, Japanese and other non-English letters out of its listings (files
+  sent by other programs without plain names), so such a folder never looks
+  empty. KaiDrop deletes those files by name, taken from the folder of the
+  same name open on the left; if there isn't one, it asks you to pick the
+  folder they were sent from. Nothing on your computer is changed.
 
 ## Send and receive
 
